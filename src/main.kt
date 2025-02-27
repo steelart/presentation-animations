@@ -13,8 +13,12 @@ import korlibs.math.geom.RectCorners
 import korlibs.math.geom.Size
 import korlibs.math.interpolation.Easing
 import korlibs.time.seconds
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.div
 import kotlin.math.absoluteValue
+import kotlin.times
 
 
 val windowSize = Size(1024, 512)*2
@@ -27,6 +31,7 @@ val lineLikeRectWidth = cornerR * 2
 
 val globalTextSize = threadHeight / 2
 val textXShift = globalTextSize/4
+val pauseR = threadHeight / 5
 
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
@@ -205,8 +210,7 @@ class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val threadsContainer = container()
 
-        val threadsInfos = simpleOnThreadCase()
-
+        val threadsInfos = twoThreadsCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
@@ -227,6 +231,9 @@ class MyScene : Scene() {
         }
 
         val timeLineEvents = mutableListOf<TimelineEvent>()
+
+        val threadUiAndChunkMap = mutableMapOf<TreadUiData, Container>()
+
         for (treadUiData in threadsInfos) {
             val execution = treadUiData.execution
 
@@ -253,38 +260,45 @@ class MyScene : Scene() {
 
             chunk.x = windowSize.width
 
-            val pauseR = threadHeight / 5
+            threadUiAndChunkMap[treadUiData] = chunk
+        }
 
-            setStateText("Running")
-            for (event in timeLineEvents) {
-                val start = chunk.x
-                val end = windowSize.width / 2 - event.position
+        setStateText("Running")
 
-                val relativeSize = (end - start).absoluteValue / windowSize.width
+        coroutineScope {
+            for ((treadUiData, chunk) in threadUiAndChunkMap) {
+                launch {
+                    for (event in timeLineEvents) {
+                        val start = chunk.x
+                        val end = windowSize.width / 2 - event.position
 
-                chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
-                if (event.eventAndNextRunningType.event == TimelineEventType.EndOfAnimation) break
+                        val relativeSize = (end - start).absoluteValue / windowSize.width
 
-                setStateText("Paused")
+                        chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
+                        if (event.eventAndNextRunningType.event == TimelineEventType.EndOfAnimation) break
 
-                val c = Circle(pauseR).apply {
-                    anchor = Anchor.CENTER
-                    x = (windowSize.width + width) / 2 + pauseR
-                    y = treadUiData.treadY - pauseR
-                    stroke = Colors.WHITE
-                    strokeThickness = globalStrokeThickness
-                    fill = Colors.BROWN
-                }
-                threadsContainer.addChild(c)
-                delay(1000)
-                threadsContainer.removeChild(c)
+                        setStateText("Paused")
 
-                setStateText(
-                    when (event.eventAndNextRunningType.nextRunningType) {
-                        RunningType.Running -> "Running"
-                        RunningType.SteppingOver -> "Stepping Over"
+                        val c = Circle(pauseR).apply {
+                            anchor = Anchor.CENTER
+                            x = (windowSize.width + width) / 2 + pauseR
+                            y = treadUiData.treadY - pauseR
+                            stroke = Colors.WHITE
+                            strokeThickness = globalStrokeThickness
+                            fill = Colors.BROWN
+                        }
+                        threadsContainer.addChild(c)
+                        delay(1000)
+                        threadsContainer.removeChild(c)
+
+                        setStateText(
+                            when (event.eventAndNextRunningType.nextRunningType) {
+                                RunningType.Running -> "Running"
+                                RunningType.SteppingOver -> "Stepping Over"
+                            }
+                        )
                     }
-                )
+                }
             }
         }
 
