@@ -1,20 +1,18 @@
-import korlibs.event.Key
-import korlibs.time.*
-import korlibs.korge.*
-import korlibs.korge.scene.*
-import korlibs.korge.tween.*
-import korlibs.korge.view.*
-import korlibs.image.color.*
-import korlibs.image.format.*
-import korlibs.image.paint.GradientPaint
+import korlibs.image.color.Colors
 import korlibs.image.paint.LinearGradientPaint
 import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
-import korlibs.io.file.std.*
-import korlibs.korge.input.keys
-import korlibs.korge.view.roundRect
+import korlibs.korge.Korge
+import korlibs.korge.scene.Scene
+import korlibs.korge.scene.sceneContainer
+import korlibs.korge.tween.get
+import korlibs.korge.tween.tween
+import korlibs.korge.view.*
 import korlibs.korge.view.vector.gpuShapeView
-import korlibs.math.geom.*
-import korlibs.math.interpolation.*
+import korlibs.math.geom.Anchor
+import korlibs.math.geom.RectCorners
+import korlibs.math.geom.Size
+import korlibs.math.interpolation.Easing
+import korlibs.time.seconds
 import kotlinx.coroutines.delay
 import kotlin.math.absoluteValue
 
@@ -23,7 +21,7 @@ val windowSize = Size(512, 512)
 val threadHeight = windowSize.height/5
 
 val yShift = threadHeight*0.15
-val strokeThickness = yShift / 3
+val globalStrokeThickness = yShift / 3
 val cornerR = threadHeight / 20
 
 val textSize = threadHeight / 2
@@ -40,7 +38,7 @@ suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, ba
 
 sealed interface ExecutionArea
 
-data class SelfExecutionArea(val width: Number, val isBreakpoint: Boolean) : ExecutionArea
+data class SelfExecutionArea(val width: Number, val event: TimelineEventType?) : ExecutionArea
 
 data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0) : ExecutionArea
 
@@ -52,8 +50,8 @@ fun MutableList<ExecutionArea>.frameExecution(functionName: String, builder: Mut
     add(FrameExecution(functionName, mutableListOf<ExecutionArea>().apply(builder)))
 }
 
-fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, isBreakpoint: Boolean = false) {
-    add(SelfExecutionArea(width, isBreakpoint))
+fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, event: TimelineEventType? = null) {
+    add(SelfExecutionArea(width, event))
 }
 
 fun adjustDepth(execution: FrameExecution, depth: Int) {
@@ -82,8 +80,16 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
     for (area in execution.areas) {
         when (area) {
             is SelfExecutionArea -> {
-                if (area.isBreakpoint) {
-                    breakPointPositions.add(xTopShift + startingX + area.width.toDouble() / 2.0)
+                if (area.event != null) {
+                    val centerX = startingX + area.width.toDouble() / 2.0
+                    if (area.event == TimelineEventType.Breakpoint) {
+                        lineLikeRect(rectHeight).also {
+                            it.x = centerX - it.width/2
+                            it.fill = Colors.BROWN
+                            container.addChild(it)
+                        }
+                    }
+                    breakPointPositions.add(xTopShift + centerX)
                 }
                 startingX += area.width.toDouble()
             }
@@ -99,7 +105,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
 
     val fillColor = depthColorList[execution.depth % depthColorList.size]
     container.addChildAt(text, 0)
-    RoundRect(Size(startingX, rectHeight), RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = strokeThickness).let {
+    RoundRect(Size(startingX, rectHeight), RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = globalStrokeThickness).let {
         container.addChildAt(it, 0)
     }
     return container
@@ -121,35 +127,36 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
 
 enum class TimelineEventType {
     Breakpoint,
+    SteppingEnd,
     EndOfAnimation,
 }
 
 data class TimelineEvent(val timeX: Double, val type: TimelineEventType)
 
-
+data class TreadUiData(val treadY: Double)
 
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
-        val firstThreadY = windowSize.width/5
+        val firstThread = TreadUiData(windowSize.width/5)
 
         solidRect(windowSize.width, threadHeight, Colors.BLUEVIOLET) {
-            y = firstThreadY
+            y = firstThread.treadY
         }
 
         val execution = FrameExecution("main", buildList {
             selfExecutionArea(longExecutionLen)
             frameExecution("foo") {
-                selfExecutionArea(longExecutionLen, isBreakpoint = true)
+                selfExecutionArea(longExecutionLen)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint)
                 frameExecution("boo") {
                     selfExecutionArea(longExecutionLen)
                 }
-                selfExecutionArea(shortExecutionLen)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd)
+                frameExecution("bar") {
+                    selfExecutionArea(longExecutionLen, TimelineEventType.Breakpoint)
+                }
             }
             selfExecutionArea(shortExecutionLen)
-            frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen)
-            }
-            selfExecutionArea(longExecutionLen)
         })
 
         adjustDepth(execution, 0)
@@ -170,13 +177,16 @@ class MyScene : Scene() {
             it.x = windowSize.width - rightShadowWidth
         }
 
-        val chunkWidth = chunk.width
-        chunk.y = firstThreadY
-        roundRect(Size(cornerR*2, windowSize.height), RectCorners(cornerR), fill = Colors.WHITE.withAd(0.5)) {
-            x = (windowSize.width - width)/2
+        chunk.y = firstThread.treadY
+        lineLikeRect(windowSize.height).let {
+            it.fill = Colors.WHITE.withAd(0.5)
+            it.x = (windowSize.width - it.width)/2
+            addChild(it)
         }
 
         chunk.x = windowSize.width
+
+        val pauseR = threadHeight / 5
 
         for (event in timeLineEvents) {
             val start = chunk.x
@@ -185,7 +195,21 @@ class MyScene : Scene() {
             val relativeSize = (end - start).absoluteValue / windowSize.width
 
             chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
-            delay(1000)
+            if (event.type != TimelineEventType.EndOfAnimation) {
+                val c = Circle(pauseR).apply {
+                    anchor = Anchor.CENTER
+                    x = (windowSize.width + width) / 2 + pauseR
+                    y = firstThread.treadY - pauseR
+                    stroke = Colors.WHITE
+                    strokeThickness = globalStrokeThickness
+                    fill = Colors.BROWN
+                }
+                addChild(c)
+                delay(1000)
+                removeChild(c)
+            }
         }
     }
 }
+
+private fun lineLikeRect(h: Double): RoundRect = RoundRect(Size(cornerR * 2, h), RectCorners(cornerR))
