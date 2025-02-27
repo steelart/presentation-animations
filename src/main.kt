@@ -71,10 +71,10 @@ fun adjustDepth(execution: FrameExecution, depth: Int) {
 
 val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
 
-data class PauseInto(val position: Double, val eventAndNextRunningType: EventAndNextRunningType)
+data class TimelineEvent(val position: Double, val eventAndNextRunningType: EventAndNextRunningType)
 
 class CollectedInfo {
-    val breakPointPositions = mutableListOf<PauseInto>()
+    val breakPointPositions = mutableListOf<TimelineEvent>()
 }
 
 fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Double): Container {
@@ -99,7 +99,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
                             container.addChild(it)
                         }
                     }
-                    breakPointPositions.add(PauseInto(xTopShift + centerX, area.eventAndNextRunningType))
+                    breakPointPositions.add(TimelineEvent(xTopShift + centerX, area.eventAndNextRunningType))
                 }
                 startingX += area.width.toDouble()
             }
@@ -131,6 +131,7 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
             this.rect(0.0, 0.0, gradientSize.width, gradientSize.height)
         }
     }) {
+        antialiased = true
     }
 }
 
@@ -145,8 +146,6 @@ enum class TimelineEventType {
     SteppingEnd,
     EndOfAnimation,
 }
-
-data class TimelineEvent(val timeX: Double, val eventAndNextRunningType: EventAndNextRunningType)
 
 data class TreadUiData(val treadY: Double)
 
@@ -216,7 +215,7 @@ class MyScene : Scene() {
 
         for (event in timeLineEvents) {
             val start = chunk.x
-            val end = windowSize.width / 2 - event.timeX
+            val end = windowSize.width / 2 - event.position
 
             val relativeSize = (end - start).absoluteValue / windowSize.width
 
