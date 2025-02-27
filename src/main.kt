@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 val windowSize = Size(1024, 512)*2
-val threadHeight = windowSize.height/5
+val threadHeight = windowSize.height/8
 
 val yShift = threadHeight*0.15
 val globalStrokeThickness = yShift / 3
@@ -95,7 +95,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
                 if (area.eventAndNextRunningType != null) {
                     val centerX = startingX + area.width.toDouble() / 2.0
                     val event = area.eventAndNextRunningType.event
-                    if (event == TimelineEventType.Breakpoint || event == TimelineEventType.SkippedBreakpoint) {
+                    if (event.isBreakpoint) {
                         lineLikeRect(rectHeight).also {
                             it.x = centerX - it.width/2
                             it.fill = Colors.BROWN
@@ -144,11 +144,12 @@ enum class RunningType {
 }
 
 
-enum class TimelineEventType(val isPaused: Boolean) {
-    Breakpoint(true),
-    SkippedBreakpoint(false),
-    SteppingEnd(true),
-    EndOfAnimation(true)
+enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
+    PermanentBreakpoint(isPaused = true, isBreakpoint = true),
+    Breakpoint(isPaused = true, isBreakpoint = true),
+    SkippedBreakpoint(isPaused = false, isBreakpoint = true),
+    SteppingEnd(isPaused = true, isBreakpoint = false),
+    EndOfAnimation(isPaused = true, isBreakpoint = false)
 }
 
 data class TreadUiData(val treadY: Double, val execution: FrameExecution)
@@ -204,9 +205,7 @@ fun twoThreadsCase(): List<TreadUiData> {
     )
 }
 
-
-
-fun breakpointInAnotherThreadsCase(): List<TreadUiData> {
+fun breakpointInAnotherThreadCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
         selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
@@ -243,12 +242,63 @@ fun breakpointInAnotherThreadsCase(): List<TreadUiData> {
     )
 }
 
+fun suspendThreadModeCase(): List<TreadUiData> {
+    val execution1 = FrameExecution("bar", buildList {
+        selfExecutionArea(longExecutionLen)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.SteppingOver)
+        frameExecution("foo") {
+            selfExecutionArea(longExecutionLen*3)
+        }
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        for (i in 0..10) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("boo") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+    })
+
+    val execution2 = FrameExecution("run", buildList {
+        selfExecutionArea(longExecutionLen)
+
+        frameExecution("another") {
+            selfExecutionArea(longExecutionLen)
+            selfExecutionArea(longExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.Running)
+        }
+
+        for (i in 0..100) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("func") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+    })
+
+    val execution3 = FrameExecution("run2", buildList {
+        selfExecutionArea(longExecutionLen)
+
+        for (i in 0..100) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("func") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+    })
+
+    return listOf(
+        TreadUiData(windowSize.height/4, execution1),
+        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
+        TreadUiData(windowSize.height/4 + threadHeight*4, execution3),
+    )
+}
+
+
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val threadsContainer = container()
 
-        val isSynchronous = true
-        val treadUiDataList = breakpointInAnotherThreadsCase()
+        val isSynchronous = false
+        val treadUiDataList = suspendThreadModeCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
@@ -345,7 +395,12 @@ class MyScene : Scene() {
                                 fill = Colors.BROWN
                             }
                             threadsContainer.addChild(c)
-                            delay(1000)
+                            if (event.eventAndNextRunningType.event != TimelineEventType.PermanentBreakpoint) {
+                                delay(1000)
+                            }
+                            else {
+                                delay(100000)
+                            }
                             threadsContainer.removeChild(c)
 
                             setStateText(
