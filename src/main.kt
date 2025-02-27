@@ -15,6 +15,8 @@ import korlibs.korge.view.roundRect
 import korlibs.korge.view.vector.gpuShapeView
 import korlibs.math.geom.*
 import korlibs.math.interpolation.*
+import kotlinx.coroutines.delay
+import kotlin.math.absoluteValue
 
 
 val windowSize = Size(512, 512)
@@ -38,7 +40,7 @@ suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, ba
 
 sealed interface ExecutionArea
 
-data class SelfExecutionArea(val width: Number) : ExecutionArea
+data class SelfExecutionArea(val width: Number, val isBreakpoint: Boolean) : ExecutionArea
 
 data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0) : ExecutionArea
 
@@ -50,8 +52,8 @@ fun MutableList<ExecutionArea>.frameExecution(functionName: String, builder: Mut
     add(FrameExecution(functionName, mutableListOf<ExecutionArea>().apply(builder)))
 }
 
-fun MutableList<ExecutionArea>.selfExecutionArea(width: Number) {
-    add(SelfExecutionArea(width))
+fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, isBreakpoint: Boolean = false) {
+    add(SelfExecutionArea(width, isBreakpoint))
 }
 
 fun adjustDepth(execution: FrameExecution, depth: Int) {
@@ -61,10 +63,13 @@ fun adjustDepth(execution: FrameExecution, depth: Int) {
     }
 }
 
-
 val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
 
-fun createUiFromExecution(execution: FrameExecution): Container {
+class CollectedInfo {
+    val breakPointPositions = mutableListOf<Double>()
+}
+
+fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Double): Container {
     val container = Container()
     val rectHeight = threadHeight - yShift*execution.depth
 
@@ -77,10 +82,13 @@ fun createUiFromExecution(execution: FrameExecution): Container {
     for (area in execution.areas) {
         when (area) {
             is SelfExecutionArea -> {
+                if (area.isBreakpoint) {
+                    breakPointPositions.add(xTopShift + startingX + area.width.toDouble() / 2.0)
+                }
                 startingX += area.width.toDouble()
             }
             is FrameExecution -> {
-                val ui = createUiFromExecution(area)
+                val ui = createUiFromExecution(area, xTopShift + startingX)
                 ui.x = startingX
                 ui.y = yShift/2
                 container.addChild(ui)
@@ -110,6 +118,16 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
     }
 }
 
+
+enum class TimelineEventType {
+    Breakpoint,
+    EndOfAnimation,
+}
+
+data class TimelineEvent(val timeX: Double, val type: TimelineEventType)
+
+
+
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val firstThreadY = windowSize.width/5
@@ -121,7 +139,7 @@ class MyScene : Scene() {
         val execution = FrameExecution("main", buildList {
             selfExecutionArea(longExecutionLen)
             frameExecution("foo") {
-                selfExecutionArea(shortExecutionLen)
+                selfExecutionArea(longExecutionLen, isBreakpoint = true)
                 frameExecution("boo") {
                     selfExecutionArea(longExecutionLen)
                 }
@@ -136,8 +154,11 @@ class MyScene : Scene() {
 
         adjustDepth(execution, 0)
 
+        val collectedInfo = CollectedInfo()
+        val chunk = collectedInfo.createUiFromExecution(execution, 0.0)
 
-        val chunk = createUiFromExecution(execution)
+        val timeLineEvents = collectedInfo.breakPointPositions.map { TimelineEvent(it, TimelineEventType.Breakpoint) } +
+                TimelineEvent(chunk.width, TimelineEventType.EndOfAnimation)
         addChild(chunk)
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
@@ -154,6 +175,17 @@ class MyScene : Scene() {
         roundRect(Size(cornerR*2, windowSize.height), RectCorners(cornerR), fill = Colors.WHITE.withAd(0.5)) {
             x = (windowSize.width - width)/2
         }
-        chunk.tween(chunk::x[windowSize.width, 0.0 - chunkWidth], time = 10.seconds, easing = Easing.LINEAR)
+
+        chunk.x = windowSize.width
+
+        for (event in timeLineEvents) {
+            val start = chunk.x
+            val end = windowSize.width / 2 - event.timeX
+
+            val relativeSize = (end - start).absoluteValue / windowSize.width
+
+            chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
+            delay(1000)
+        }
     }
 }
