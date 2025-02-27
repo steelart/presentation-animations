@@ -94,7 +94,8 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
             is SelfExecutionArea -> {
                 if (area.eventAndNextRunningType != null) {
                     val centerX = startingX + area.width.toDouble() / 2.0
-                    if (area.eventAndNextRunningType.event == TimelineEventType.Breakpoint) {
+                    val event = area.eventAndNextRunningType.event
+                    if (event == TimelineEventType.Breakpoint || event == TimelineEventType.SkippedBreakpoint) {
                         lineLikeRect(rectHeight).also {
                             it.x = centerX - it.width/2
                             it.fill = Colors.BROWN
@@ -143,10 +144,11 @@ enum class RunningType {
 }
 
 
-enum class TimelineEventType {
-    Breakpoint,
-    SteppingEnd,
-    EndOfAnimation,
+enum class TimelineEventType(val isPaused: Boolean) {
+    Breakpoint(true),
+    SkippedBreakpoint(false),
+    SteppingEnd(true),
+    EndOfAnimation(true)
 }
 
 data class TreadUiData(val treadY: Double, val execution: FrameExecution)
@@ -203,12 +205,50 @@ fun twoThreadsCase(): List<TreadUiData> {
 }
 
 
+
+fun breakpointInAnotherThreadsCase(): List<TreadUiData> {
+    val execution1 = FrameExecution("bar", buildList {
+        selfExecutionArea(longExecutionLen)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
+        frameExecution("foo") {
+            selfExecutionArea(longExecutionLen*3)
+        }
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        for (i in 0..10) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("boo") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+    })
+
+    val execution2 = FrameExecution("run", buildList {
+        selfExecutionArea(longExecutionLen)
+
+        frameExecution("another") {
+            selfExecutionArea(longExecutionLen)
+            selfExecutionArea(longExecutionLen, TimelineEventType.SkippedBreakpoint, RunningType.SteppingOver)
+        }
+
+        for (i in 0..100) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("func") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+    })
+    return listOf(
+        TreadUiData(windowSize.height/4, execution1),
+        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
+    )
+}
+
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val threadsContainer = container()
 
-        val isSynchronous = false
-        val treadUiDataList = twoThreadsCase()
+        val isSynchronous = true
+        val treadUiDataList = breakpointInAnotherThreadsCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
@@ -270,6 +310,7 @@ class MyScene : Scene() {
         )
 
         if (isSynchronous) {
+            allTimeLineEvents.sortBy { it.position }
             allTimeLineEvents.add(endEvent)
         }
         else {
@@ -292,26 +333,28 @@ class MyScene : Scene() {
                         chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
                         if (event.eventAndNextRunningType.event == TimelineEventType.EndOfAnimation) break
 
-                        setStateText("Paused")
+                        if (event.eventAndNextRunningType.event.isPaused) {
+                            setStateText("Paused")
 
-                        val c = Circle(pauseR).apply {
-                            anchor = Anchor.CENTER
-                            x = (windowSize.width + width) / 2 + pauseR
-                            y = treadUiData.treadY - pauseR
-                            stroke = Colors.WHITE
-                            strokeThickness = globalStrokeThickness
-                            fill = Colors.BROWN
-                        }
-                        threadsContainer.addChild(c)
-                        delay(1000)
-                        threadsContainer.removeChild(c)
-
-                        setStateText(
-                            when (event.eventAndNextRunningType.nextRunningType) {
-                                RunningType.Running -> "Running"
-                                RunningType.SteppingOver -> "Stepping Over"
+                            val c = Circle(pauseR).apply {
+                                anchor = Anchor.CENTER
+                                x = (windowSize.width + width) / 2 + pauseR
+                                y = treadUiData.treadY - pauseR
+                                stroke = Colors.WHITE
+                                strokeThickness = globalStrokeThickness
+                                fill = Colors.BROWN
                             }
-                        )
+                            threadsContainer.addChild(c)
+                            delay(1000)
+                            threadsContainer.removeChild(c)
+
+                            setStateText(
+                                when (event.eventAndNextRunningType.nextRunningType) {
+                                    RunningType.Running -> "Running"
+                                    RunningType.SteppingOver -> "Stepping Over"
+                                }
+                            )
+                        }
                     }
                 }
             }
