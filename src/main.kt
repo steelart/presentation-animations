@@ -48,7 +48,7 @@ data class EventAndNextRunningType(val event: TimelineEventType, val nextRunning
 
 data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
-data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0) : ExecutionArea
+data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0, var parent: FrameExecution? = null) : ExecutionArea
 
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
@@ -66,10 +66,11 @@ fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, event: TimelineE
     add(SelfExecutionArea(width, EventAndNextRunningType(event, nextRunningType)))
 }
 
-fun adjustDepth(execution: FrameExecution, depth: Int) {
+fun adjustDepth(execution: FrameExecution, depth: Int, parent: FrameExecution?) {
     execution.depth = depth
+    execution.parent = parent
     for (call in execution.areas) {
-        if (call is FrameExecution) adjustDepth(call, depth + 1)
+        if (call is FrameExecution) adjustDepth(call, depth + 1, execution)
     }
 }
 
@@ -80,7 +81,10 @@ data class TimelineEvent(
     val eventAndNextRunningType: EventAndNextRunningType,
     val frame: FrameExecution,
     val container: Container,
-    var relativePosition: Double = absPosition)
+    var relativePosition: Double = absPosition
+)
+
+val FrameExecution.topFrame: FrameExecution get() = parent?.topFrame ?: this
 
 class CollectedInfo {
     val breakPointPositions = mutableListOf<TimelineEvent>()
@@ -380,7 +384,7 @@ class MyScene : Scene() {
                 y = treadUiData.treadY
             }
 
-            adjustDepth(execution, 0)
+            adjustDepth(execution, 0, null)
 
             val collectedInfo = CollectedInfo()
             val chunk = collectedInfo.createUiFromExecution(execution, 0.0)
@@ -406,8 +410,8 @@ class MyScene : Scene() {
             threadInfos.maxOf { it.chunk.width },
             EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running),
             // useless here, just something
-            FrameExecution("end", listOf(SelfExecutionArea(0.0, null))),
-            Container(),
+            threadInfos.first().treadUiData.execution,
+            threadInfos.first().chunk,
         )
 
         if (isSynchronous) {
@@ -422,93 +426,104 @@ class MyScene : Scene() {
 
         setStateText("Running")
 
-        coroutineScope {
-            for ((treadUiData, chunk, timelineEvents) in threadInfos) {
-                launch {
-                    for (timelineEvent in allTimeLineEvents) {
-                        val start = chunk.x
-                        val end = windowSize.width / 2 - timelineEvent.absPosition
+        var threadNowRunning: TreadUiData? = null
+        for (timelineEvent in allTimeLineEvents) {
 
-                        val relativeSize = (end - start).absoluteValue / windowSize.width
+            val nextEventIn: ThreadInfo =
+                timelineEvent.frame.topFrame.let { top -> threadInfos.single { it.treadUiData.execution === top } }
 
-                        chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
-                        val event = timelineEvent.eventAndNextRunningType.event
-                        if (event == TimelineEventType.EndOfAnimation) break
+            val end = windowSize.width / 2 - timelineEvent.absPosition
+            val pass = (end - nextEventIn.chunk.x).absoluteValue
+            val relativeSize = pass / windowSize.width
 
-                        if (event.isPaused) {
-                            setStateText("Paused")
+            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == it }) } ?: threadInfos
 
-                            val c = Circle(pauseR).apply {
-                                anchor = Anchor.CENTER
-                                x = (windowSize.width + width) / 2 + pauseR
-                                y = treadUiData.treadY - pauseR
-                                stroke = Colors.WHITE
-                                strokeThickness = globalStrokeThickness
-                                fill = Colors.BROWN
+            coroutineScope {
+                for ((treadUiData,  chunk, timelineEvents) in runningThreads) {
+                        launch {
+                            val start = chunk.x
+                            chunk.tween(chunk::x[start, start - pass], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
+                        }
+                }
+            }
+
+            val treadUiData = nextEventIn.treadUiData
+
+
+            val event = timelineEvent.eventAndNextRunningType.event
+            if (event == TimelineEventType.EndOfAnimation) break
+
+            if (event.isPaused) {
+                setStateText("Paused")
+
+                val c = Circle(pauseR).apply {
+                    anchor = Anchor.CENTER
+                    x = (windowSize.width + width) / 2 + pauseR
+                    y = treadUiData.treadY - pauseR
+                    stroke = Colors.WHITE
+                    strokeThickness = globalStrokeThickness
+                    fill = Colors.BROWN
+                }
+                threadsContainer.addChild(c)
+                if (event != TimelineEventType.PermanentBreakpoint) {
+                    delay(1000)
+                }
+                else {
+                    delay(100000)
+                }
+                threadsContainer.removeChild(c)
+                val injection = timelineEvent.eventAndNextRunningType.injection
+
+                if (injection != null) {
+                    adjustDepth(injection, timelineEvent.frame.depth + 1, timelineEvent.frame)
+
+                    val collectedInfo = CollectedInfo()
+                    val injectionChunk = collectedInfo.createUiFromExecution(injection, timelineEvent.absPosition + lineLikeRectWidth)
+                    val extendBy = injectionChunk.width
+                    var relativePosition = timelineEvent.relativePosition
+                    var c = timelineEvent.container
+                    coroutineScope {
+                        while (true) {
+                            val firstChild = c.children.firstOrNull() ?: break
+                            if (firstChild !is RoundRect) break
+                            launch {
+                                firstChild.tween(firstChild::width[firstChild.width, firstChild.width + extendBy], time = 300.milliseconds)
                             }
-                            threadsContainer.addChild(c)
-                            if (event != TimelineEventType.PermanentBreakpoint) {
-                                delay(1000)
-                            }
-                            else {
-                                delay(100000)
-                            }
-                            threadsContainer.removeChild(c)
-                            val injection = timelineEvent.eventAndNextRunningType.injection
 
-                            if (injection != null) {
-                                adjustDepth(injection, timelineEvent.frame.depth + 1)
-
-                                val collectedInfo = CollectedInfo()
-                                val injectionChunk = collectedInfo.createUiFromExecution(injection, timelineEvent.absPosition + lineLikeRectWidth)
-                                val extendBy = injectionChunk.width
-                                var relativePosition = timelineEvent.relativePosition
-                                var c = timelineEvent.container
-                                coroutineScope {
-                                    while (true) {
-                                        val firstChild = c.children.firstOrNull() ?: break
-                                        if (firstChild !is RoundRect) break
-                                        launch {
-                                            firstChild.tween(firstChild::width[firstChild.width, firstChild.width + extendBy], time = 300.milliseconds)
-                                        }
-
-                                        for (view in c.children) {
-                                            if (view.x > relativePosition) {
-                                                launch {
-                                                    view.tween(view::x[view.x, view.x + extendBy], time = 300.milliseconds)
-                                                }
-                                            }
-                                        }
-                                        relativePosition = c.x + c.width
-                                        c = c.parent ?: break
+                            for (view in c.children) {
+                                if (view.x > relativePosition) {
+                                    launch {
+                                        view.tween(view::x[view.x, view.x + extendBy], time = 300.milliseconds)
                                     }
                                 }
-                                timelineEvent.container.addChild(injectionChunk)
-                                injectionChunk.x = timelineEvent.relativePosition + lineLikeRectWidth
-                                injectionChunk.y = yShift/2
-
-                                for (e2 in timelineEvents) {
-                                    if (e2.absPosition > timelineEvent.absPosition) {
-                                        if (e2.frame == timelineEvent.frame) {
-                                            e2.relativePosition += extendBy
-                                        }
-                                        e2.absPosition += extendBy
-                                    }
-                                }
-
-                                delay(1000)
                             }
-
-                            setStateText(
-                                when (timelineEvent.eventAndNextRunningType.nextRunningType) {
-                                    RunningType.Evaluation -> "Evaluation"
-                                    RunningType.Running -> "Running"
-                                    RunningType.SteppingOver -> "Stepping Over"
-                                }
-                            )
+                            relativePosition = c.x + c.width
+                            c = c.parent ?: break
                         }
                     }
+                    timelineEvent.container.addChild(injectionChunk)
+                    injectionChunk.x = timelineEvent.relativePosition + lineLikeRectWidth
+                    injectionChunk.y = yShift/2
+
+                    for (e2 in allTimeLineEvents) {
+                        if (e2.absPosition > timelineEvent.absPosition) {
+                            if (e2.frame == timelineEvent.frame) {
+                                e2.relativePosition += extendBy
+                            }
+                            e2.absPosition += extendBy
+                        }
+                    }
+
+                    delay(1000)
                 }
+
+                setStateText(
+                    when (timelineEvent.eventAndNextRunningType.nextRunningType) {
+                        RunningType.Evaluation -> "Evaluation"
+                        RunningType.Running -> "Running"
+                        RunningType.SteppingOver -> "Stepping Over"
+                    }
+                )
             }
         }
 
