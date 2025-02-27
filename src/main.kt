@@ -12,6 +12,7 @@ import korlibs.math.geom.Anchor
 import korlibs.math.geom.RectCorners
 import korlibs.math.geom.Size
 import korlibs.math.interpolation.Easing
+import korlibs.time.milliseconds
 import korlibs.time.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -19,7 +20,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.absoluteValue
 
-val windowSize = Size(1024, 512)*2
+val windowSize = Size(1024, 512)
 val threadHeight = windowSize.height/8
 
 val yShift = threadHeight*0.15
@@ -135,7 +136,7 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
             this.rect(0.0, 0.0, gradientSize.width, gradientSize.height)
         }
     }) {
-        antialiased = true
+        //antialiased = true
     }
 }
 
@@ -451,15 +452,24 @@ class MyScene : Scene() {
                                 val extendBy = injectionChunk.width
                                 var relativePosition = timelineEvent.relativePosition
                                 var c = timelineEvent.container
-                                while (true) {
-                                    val firstChild = c.children.firstOrNull() ?: break
-                                    if (firstChild !is RoundRect) break
-                                    firstChild.width += extendBy
-                                    for (view in c.children) {
-                                        if (view.x >= relativePosition) view.x += extendBy
+                                coroutineScope {
+                                    while (true) {
+                                        val firstChild = c.children.firstOrNull() ?: break
+                                        if (firstChild !is RoundRect) break
+                                        launch {
+                                            firstChild.tween(firstChild::width[firstChild.width, firstChild.width + extendBy], time = 300.milliseconds)
+                                        }
+
+                                        for (view in c.children) {
+                                            if (view.x > relativePosition) {
+                                                launch {
+                                                    view.tween(view::x[view.x, view.x + extendBy], time = 300.milliseconds)
+                                                }
+                                            }
+                                        }
+                                        relativePosition = c.x + c.width
+                                        c = c.parent ?: break
                                     }
-                                    relativePosition = c.x + c.width
-                                    c = c.parent ?: break
                                 }
                                 delay(1000)
                             }
