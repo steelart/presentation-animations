@@ -16,10 +16,7 @@ import korlibs.time.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.div
 import kotlin.math.absoluteValue
-import kotlin.times
-
 
 val windowSize = Size(1024, 512)*2
 val threadHeight = windowSize.height/5
@@ -181,7 +178,7 @@ fun twoThreadsCase(): List<TreadUiData> {
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
         }
-        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
         for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
@@ -201,7 +198,7 @@ fun twoThreadsCase(): List<TreadUiData> {
     })
     return listOf(
         TreadUiData(windowSize.height/4, execution1),
-        TreadUiData(windowSize.height/2, execution2),
+        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
     )
 }
 
@@ -210,7 +207,8 @@ class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val threadsContainer = container()
 
-        val threadsInfos = twoThreadsCase()
+        val isSynchronous = false
+        val treadUiDataList = twoThreadsCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
@@ -226,15 +224,17 @@ class MyScene : Scene() {
             if (stateText != null) removeChild(stateText)
             stateText = text(text, textSize = globalTextSize) {
                 y = 0.0
-                x = windowSize.width /2 + lineLikeRectWidth
+                x = windowSize.width / 2 + lineLikeRectWidth
             }
         }
 
-        val timeLineEvents = mutableListOf<TimelineEvent>()
+        val allTimeLineEvents = mutableListOf<TimelineEvent>()
 
-        val threadUiAndChunkMap = mutableMapOf<TreadUiData, Container>()
+        data class ThreadInfo(val treadUiData: TreadUiData, val chunk: Container, val timelineEvents: MutableList<TimelineEvent>)
 
-        for (treadUiData in threadsInfos) {
+        val threadInfos = mutableListOf<ThreadInfo>()
+
+        for (treadUiData in treadUiDataList) {
             val execution = treadUiData.execution
 
             threadsContainer.solidRect(windowSize.width, threadHeight, Colors.BLUEVIOLET) {
@@ -246,8 +246,9 @@ class MyScene : Scene() {
             val collectedInfo = CollectedInfo()
             val chunk = collectedInfo.createUiFromExecution(execution, 0.0)
 
-            timeLineEvents.addAll(collectedInfo.breakPointPositions.map { TimelineEvent(it.position, it.eventAndNextRunningType) } +
-                    TimelineEvent(chunk.width, EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running)))
+            val timelineEvents =
+                collectedInfo.breakPointPositions.map { TimelineEvent(it.position, it.eventAndNextRunningType) }.toMutableList()
+            allTimeLineEvents.addAll(timelineEvents)
 
             threadsContainer.addChild(chunk)
 
@@ -260,15 +261,29 @@ class MyScene : Scene() {
 
             chunk.x = windowSize.width
 
-            threadUiAndChunkMap[treadUiData] = chunk
+            threadInfos.add(ThreadInfo(treadUiData, chunk, if (isSynchronous) allTimeLineEvents else timelineEvents))
+        }
+
+        val endEvent = TimelineEvent(
+            threadInfos.maxOf { it.chunk.width },
+            EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running)
+        )
+
+        if (isSynchronous) {
+            allTimeLineEvents.add(endEvent)
+        }
+        else {
+            for ((_, _, timelineEvents) in threadInfos) {
+                timelineEvents.add(endEvent)
+            }
         }
 
         setStateText("Running")
 
         coroutineScope {
-            for ((treadUiData, chunk) in threadUiAndChunkMap) {
+            for ((treadUiData, chunk, timelineEvents) in threadInfos) {
                 launch {
-                    for (event in timeLineEvents) {
+                    for (event in timelineEvents) {
                         val start = chunk.x
                         val end = windowSize.width / 2 - event.position
 
