@@ -16,6 +16,7 @@ import korlibs.time.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.absoluteValue
 
 val windowSize = Size(1024, 512)*2
@@ -42,7 +43,7 @@ suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, ba
 sealed interface ExecutionArea
 
 
-data class EventAndNextRunningType(val event: TimelineEventType, val nextRunningType: RunningType, val injection: ExecutionArea? = null)
+data class EventAndNextRunningType(val event: TimelineEventType, val nextRunningType: RunningType, val injection: FrameExecution? = null)
 
 data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
@@ -73,7 +74,7 @@ fun adjustDepth(execution: FrameExecution, depth: Int) {
 
 val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
 
-data class TimelineEvent(val absPosition: Double, val eventAndNextRunningType: EventAndNextRunningType)
+data class TimelineEvent(val absPosition: Double, val eventAndNextRunningType: EventAndNextRunningType, val container: Container, val relativePosition: Double = absPosition)
 
 class CollectedInfo {
     val breakPointPositions = mutableListOf<TimelineEvent>()
@@ -102,7 +103,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
                             container.addChild(it)
                         }
                     }
-                    breakPointPositions.add(TimelineEvent(xFirstFrameShift + centerX, area.eventAndNextRunningType))
+                    breakPointPositions.add(TimelineEvent(xFirstFrameShift + centerX, area.eventAndNextRunningType, container, centerX))
                 }
                 startingX += area.width.toDouble()
             }
@@ -392,7 +393,8 @@ class MyScene : Scene() {
 
         val endEvent = TimelineEvent(
             threadInfos.maxOf { it.chunk.width },
-            EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running)
+            EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running),
+            Container(), // useless here, just something
         )
 
         if (isSynchronous) {
@@ -442,7 +444,24 @@ class MyScene : Scene() {
                             val injection = timelineEvent.eventAndNextRunningType.injection
 
                             if (injection != null) {
+                                adjustDepth(injection, 0) // fix depth
 
+                                val collectedInfo = CollectedInfo()
+                                val injectionChunk = collectedInfo.createUiFromExecution(injection, 0.0)
+                                val extendBy = injectionChunk.width
+                                var relativePosition = timelineEvent.relativePosition
+                                var c = timelineEvent.container
+                                while (true) {
+                                    val firstChild = c.children.firstOrNull() ?: break
+                                    if (firstChild !is RoundRect) break
+                                    firstChild.width += extendBy
+                                    for (view in c.children) {
+                                        if (view.x >= relativePosition) view.x += extendBy
+                                    }
+                                    relativePosition = c.x + c.width
+                                    c = c.parent ?: break
+                                }
+                                delay(1000)
                             }
 
                             setStateText(
