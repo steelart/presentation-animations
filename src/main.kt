@@ -17,8 +17,12 @@ import korlibs.math.geom.*
 import korlibs.math.interpolation.*
 
 
-val windowSize = Size(512, 512)*2
+val windowSize = Size(512, 512)
 val threadHeight = windowSize.height/5
+
+val yShift = threadHeight*0.15
+val strokeThickness = yShift / 3
+val cornerR = threadHeight / 20
 
 val textSize = threadHeight / 2
 val textXShift = textSize/4
@@ -62,7 +66,6 @@ val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
 
 fun createUiFromExecution(execution: FrameExecution): Container {
     val container = Container()
-    val yShift = threadHeight*0.15
     val rectHeight = threadHeight - yShift*execution.depth
 
     val text = Text(execution.functionName, textSize = textSize, alignment = MIDDLE_LEFT).also {
@@ -88,15 +91,17 @@ fun createUiFromExecution(execution: FrameExecution): Container {
 
     val fillColor = depthColorList[execution.depth % depthColorList.size]
     container.addChildAt(text, 0)
-    RoundRect(Size(startingX, rectHeight), RectCorners(threadHeight/20), fill = fillColor, stroke = Colors.WHITE, strokeThickness = yShift/3).let {
+    RoundRect(Size(startingX, rectHeight), RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = strokeThickness).let {
         container.addChildAt(it, 0)
     }
     return container
 }
 
 
-fun horizontalGradientContainer(gradientSize: Size) = Container().apply {
-    val mainStrokePaint = LinearGradientPaint(0, 0, gradientSize.width, 0).addColorStop(0.0, Colors.BLACK.withAd(1.0)).addColorStop(1.0, Colors.BLACK.withAd(0.0))
+fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlpha: Double) = Container().apply {
+    val mainStrokePaint = LinearGradientPaint(0, 0, gradientSize.width, 0)
+        .addColorStop(0.0, Colors.BLACK.withAd(leftAlpha))
+        .addColorStop(1.0, Colors.BLACK.withAd(rightAlpha))
     gpuShapeView({
         this.fill(mainStrokePaint) {
             this.rect(0.0, 0.0, gradientSize.width, gradientSize.height)
@@ -135,30 +140,20 @@ class MyScene : Scene() {
         val chunk = createUiFromExecution(execution)
         addChild(chunk)
 
-        horizontalGradientContainer(Size(windowSize.width/3, windowSize.height)).also {
+        horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
+        }
+        val rightShadowWidth = windowSize.width / 5
+        horizontalGradientContainer(Size(rightShadowWidth, windowSize.height), 0.0, 1.0).also {
+            addChild(it)
+            it.x = windowSize.width - rightShadowWidth
         }
 
         val chunkWidth = chunk.width
         chunk.y = firstThreadY
+        roundRect(Size(cornerR*2, windowSize.height), RectCorners(cornerR), fill = Colors.WHITE.withAd(0.5)) {
+            x = (windowSize.width - width)/2
+        }
         chunk.tween(chunk::x[windowSize.width, 0.0 - chunkWidth], time = 10.seconds, easing = Easing.LINEAR)
-
-
-        val minDegrees = (-16).degrees
-        val maxDegrees = (+16).degrees
-
-
-        val image = image(resourcesVfs["korge.png"].readBitmap()) {
-            rotation = maxDegrees
-            anchor(.5, .5)
-            scale(0.8)
-            position(256, 256)
-        }
-
-
-        while (true) {
-            image.tween(image::rotation[minDegrees], time = 1.seconds, easing = Easing.EASE_IN_OUT)
-            image.tween(image::rotation[maxDegrees], time = 1.seconds, easing = Easing.EASE_IN_OUT)
-        }
     }
 }
