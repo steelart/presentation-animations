@@ -17,15 +17,16 @@ import kotlinx.coroutines.delay
 import kotlin.math.absoluteValue
 
 
-val windowSize = Size(512, 512)*2
+val windowSize = Size(1024, 512)*2
 val threadHeight = windowSize.height/5
 
 val yShift = threadHeight*0.15
 val globalStrokeThickness = yShift / 3
 val cornerR = threadHeight / 20
+val lineLikeRectWidth = cornerR * 2
 
-val textSize = threadHeight / 2
-val textXShift = textSize/4
+val globalTextSize = threadHeight / 2
+val textXShift = globalTextSize/4
 
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
@@ -38,7 +39,10 @@ suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, ba
 
 sealed interface ExecutionArea
 
-data class SelfExecutionArea(val width: Number, val event: TimelineEventType?) : ExecutionArea
+
+data class EventAndNextRunningType(val event: TimelineEventType, val nextRunningType: RunningType)
+
+data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
 data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0) : ExecutionArea
 
@@ -50,8 +54,12 @@ fun MutableList<ExecutionArea>.frameExecution(functionName: String, builder: Mut
     add(FrameExecution(functionName, mutableListOf<ExecutionArea>().apply(builder)))
 }
 
-fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, event: TimelineEventType? = null) {
-    add(SelfExecutionArea(width, event))
+fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, eventAndNextRunningType: EventAndNextRunningType? = null) {
+    add(SelfExecutionArea(width, eventAndNextRunningType))
+}
+
+fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, event: TimelineEventType, nextRunningType: RunningType) {
+    add(SelfExecutionArea(width, EventAndNextRunningType(event, nextRunningType)))
 }
 
 fun adjustDepth(execution: FrameExecution, depth: Int) {
@@ -63,15 +71,17 @@ fun adjustDepth(execution: FrameExecution, depth: Int) {
 
 val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
 
+data class PauseInto(val position: Double, val eventAndNextRunningType: EventAndNextRunningType)
+
 class CollectedInfo {
-    val breakPointPositions = mutableListOf<Double>()
+    val breakPointPositions = mutableListOf<PauseInto>()
 }
 
 fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Double): Container {
     val container = Container()
     val rectHeight = threadHeight - yShift*execution.depth
 
-    val text = Text(execution.functionName, textSize = textSize, alignment = MIDDLE_LEFT).also {
+    val text = Text(execution.functionName, textSize = globalTextSize, alignment = MIDDLE_LEFT).also {
         it.y = rectHeight/2
         it.x = textXShift
     }
@@ -80,16 +90,16 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xTopShift: Do
     for (area in execution.areas) {
         when (area) {
             is SelfExecutionArea -> {
-                if (area.event != null) {
+                if (area.eventAndNextRunningType != null) {
                     val centerX = startingX + area.width.toDouble() / 2.0
-                    if (area.event == TimelineEventType.Breakpoint) {
+                    if (area.eventAndNextRunningType.event == TimelineEventType.Breakpoint) {
                         lineLikeRect(rectHeight).also {
                             it.x = centerX - it.width/2
                             it.fill = Colors.BROWN
                             container.addChild(it)
                         }
                     }
-                    breakPointPositions.add(xTopShift + centerX)
+                    breakPointPositions.add(PauseInto(xTopShift + centerX, area.eventAndNextRunningType))
                 }
                 startingX += area.width.toDouble()
             }
@@ -124,6 +134,11 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
     }
 }
 
+enum class RunningType {
+    Running,
+    SteppingOver,
+}
+
 
 enum class TimelineEventType {
     Breakpoint,
@@ -131,7 +146,7 @@ enum class TimelineEventType {
     EndOfAnimation,
 }
 
-data class TimelineEvent(val timeX: Double, val type: TimelineEventType)
+data class TimelineEvent(val timeX: Double, val eventAndNextRunningType: EventAndNextRunningType)
 
 data class TreadUiData(val treadY: Double)
 
@@ -147,13 +162,13 @@ class MyScene : Scene() {
             selfExecutionArea(longExecutionLen)
             frameExecution("foo") {
                 selfExecutionArea(longExecutionLen)
-                selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
                 frameExecution("boo") {
                     selfExecutionArea(longExecutionLen)
                 }
-                selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver)
                 frameExecution("bar") {
-                    selfExecutionArea(longExecutionLen, TimelineEventType.Breakpoint)
+                    selfExecutionArea(longExecutionLen, TimelineEventType.Breakpoint, RunningType.Running)
                 }
             }
             selfExecutionArea(shortExecutionLen)
@@ -164,8 +179,8 @@ class MyScene : Scene() {
         val collectedInfo = CollectedInfo()
         val chunk = collectedInfo.createUiFromExecution(execution, 0.0)
 
-        val timeLineEvents = collectedInfo.breakPointPositions.map { TimelineEvent(it, TimelineEventType.Breakpoint) } +
-                TimelineEvent(chunk.width, TimelineEventType.EndOfAnimation)
+        val timeLineEvents = collectedInfo.breakPointPositions.map { TimelineEvent(it.position, it.eventAndNextRunningType) } +
+                TimelineEvent(chunk.width, EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running))
         addChild(chunk)
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
@@ -188,6 +203,17 @@ class MyScene : Scene() {
 
         val pauseR = threadHeight / 5
 
+        var stateText: Text? = null
+        fun setStateText(text: String) {
+            if (stateText != null) removeChild(stateText)
+            stateText = text(text, textSize = globalTextSize) {
+                y = 0.0
+                x = windowSize.width /2 + lineLikeRectWidth
+            }
+        }
+
+        setStateText("Running")
+
         for (event in timeLineEvents) {
             val start = chunk.x
             val end = windowSize.width / 2 - event.timeX
@@ -195,21 +221,31 @@ class MyScene : Scene() {
             val relativeSize = (end - start).absoluteValue / windowSize.width
 
             chunk.tween(chunk::x[start, end], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
-            if (event.type != TimelineEventType.EndOfAnimation) {
-                val c = Circle(pauseR).apply {
-                    anchor = Anchor.CENTER
-                    x = (windowSize.width + width) / 2 + pauseR
-                    y = firstThread.treadY - pauseR
-                    stroke = Colors.WHITE
-                    strokeThickness = globalStrokeThickness
-                    fill = Colors.BROWN
-                }
-                addChild(c)
-                delay(1000)
-                removeChild(c)
+            if (event.eventAndNextRunningType.event == TimelineEventType.EndOfAnimation) break
+
+            setStateText("Paused")
+
+            val c = Circle(pauseR).apply {
+                anchor = Anchor.CENTER
+                x = (windowSize.width + width) / 2 + pauseR
+                y = firstThread.treadY - pauseR
+                stroke = Colors.WHITE
+                strokeThickness = globalStrokeThickness
+                fill = Colors.BROWN
             }
+            addChild(c)
+            delay(1000)
+            removeChild(c)
+
+            setStateText(
+                when (event.eventAndNextRunningType.nextRunningType) {
+                    RunningType.Running -> "Running"
+                    RunningType.SteppingOver -> "Stepping Over"
+                }
+            )
         }
+        setStateText("Done")
     }
 }
 
-private fun lineLikeRect(h: Double): RoundRect = RoundRect(Size(cornerR * 2, h), RectCorners(cornerR))
+private fun lineLikeRect(h: Double): RoundRect = RoundRect(Size(lineLikeRectWidth * 2, h), RectCorners(cornerR))
