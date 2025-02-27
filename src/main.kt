@@ -17,7 +17,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.absoluteValue
 
 
-val windowSize = Size(512, 512)
+val windowSize = Size(512, 512)*2
 val threadHeight = windowSize.height/5
 
 val yShift = threadHeight*0.15
