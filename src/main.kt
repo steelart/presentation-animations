@@ -17,7 +17,6 @@ import korlibs.time.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import kotlin.math.absoluteValue
 
 val windowSize = Size(1024, 512)
@@ -166,6 +165,7 @@ enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
     Breakpoint(isPaused = true, isBreakpoint = true),
     SkippedBreakpoint(isPaused = false, isBreakpoint = true),
     SteppingEnd(isPaused = true, isBreakpoint = false),
+    EvaluationEnd(isPaused = true, isBreakpoint = false),
     EndOfAnimation(isPaused = true, isBreakpoint = false)
 }
 
@@ -427,16 +427,17 @@ class MyScene : Scene() {
         setStateText("Running")
 
         var threadNowRunning: TreadUiData? = null
-        for (timelineEvent in allTimeLineEvents) {
-
-            val nextEventIn: ThreadInfo =
+        var currentEventIndex = 0
+        while (currentEventIndex < allTimeLineEvents.size) {
+            val timelineEvent = allTimeLineEvents[currentEventIndex]
+            val threadHoldingCurrentEvent: ThreadInfo =
                 timelineEvent.frame.topFrame.let { top -> threadInfos.single { it.treadUiData.execution === top } }
 
             val end = windowSize.width / 2 - timelineEvent.absPosition
-            val pass = (end - nextEventIn.chunk.x).absoluteValue
+            val pass = (end - threadHoldingCurrentEvent.chunk.x).absoluteValue
             val relativeSize = pass / windowSize.width
 
-            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == it }) } ?: threadInfos
+            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == t }) } ?: threadInfos
 
             coroutineScope {
                 for ((treadUiData,  chunk, timelineEvents) in runningThreads) {
@@ -447,31 +448,34 @@ class MyScene : Scene() {
                 }
             }
 
-            val treadUiData = nextEventIn.treadUiData
-
-
             val event = timelineEvent.eventAndNextRunningType.event
             if (event == TimelineEventType.EndOfAnimation) break
 
             if (event.isPaused) {
                 setStateText("Paused")
 
-                val c = Circle(pauseR).apply {
-                    anchor = Anchor.CENTER
-                    x = (windowSize.width + width) / 2 + pauseR
-                    y = treadUiData.treadY - pauseR
-                    stroke = Colors.WHITE
-                    strokeThickness = globalStrokeThickness
-                    fill = Colors.BROWN
+                coroutineScope {
+                    for ((treadUiData, chunk, timelineEvents) in runningThreads) {
+                        launch {
+                            val c = Circle(pauseR).apply {
+                                anchor = Anchor.CENTER
+                                x = (windowSize.width + width) / 2 + pauseR
+                                y = treadUiData.treadY - pauseR
+                                stroke = Colors.WHITE
+                                strokeThickness = globalStrokeThickness
+                                fill = Colors.BROWN
+                            }
+                            threadsContainer.addChild(c)
+                            if (event != TimelineEventType.PermanentBreakpoint) {
+                                delay(1000)
+                            } else {
+                                delay(100000)
+                            }
+                            threadsContainer.removeChild(c)
+                        }
+                    }
                 }
-                threadsContainer.addChild(c)
-                if (event != TimelineEventType.PermanentBreakpoint) {
-                    delay(1000)
-                }
-                else {
-                    delay(100000)
-                }
-                threadsContainer.removeChild(c)
+
                 val injection = timelineEvent.eventAndNextRunningType.injection
 
                 if (injection != null) {
@@ -514,6 +518,14 @@ class MyScene : Scene() {
                         }
                     }
 
+                    allTimeLineEvents.add(TimelineEvent(
+                        timelineEvent.absPosition + lineLikeRectWidth + extendBy,
+                        EventAndNextRunningType(TimelineEventType.EvaluationEnd, RunningType.SteppingOver),
+                        injection,
+                        injectionChunk,
+                    ))
+                    allTimeLineEvents.sortBy { it.absPosition }
+
                     delay(1000)
                 }
 
@@ -524,7 +536,13 @@ class MyScene : Scene() {
                         RunningType.SteppingOver -> "Stepping Over"
                     }
                 )
+
+                threadNowRunning = when (timelineEvent.eventAndNextRunningType.nextRunningType) {
+                    RunningType.Evaluation -> threadHoldingCurrentEvent.treadUiData
+                    else -> null
+                }
             }
+            currentEventIndex++
         }
 
         setStateText("Done")
