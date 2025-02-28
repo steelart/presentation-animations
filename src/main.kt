@@ -13,7 +13,6 @@ import korlibs.math.geom.RectCorners
 import korlibs.math.geom.Size
 import korlibs.math.interpolation.Easing
 import korlibs.time.milliseconds
-import korlibs.time.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -156,17 +155,19 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
 enum class RunningType {
     Running,
     SteppingOver,
-    Evaluation,
+    EvaluationAll,
+    EvaluationThread,
 }
 
 
 enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
     PermanentBreakpoint(isPaused = true, isBreakpoint = true),
     Breakpoint(isPaused = true, isBreakpoint = true),
+    BreakpointTmpThread(isPaused = true, isBreakpoint = false),
     TmpBreakpoint(isPaused = true, isBreakpoint = false),
     SkippedBreakpoint(isPaused = false, isBreakpoint = true),
     SteppingEnd(isPaused = true, isBreakpoint = false),
-    EvaluationEnd(isPaused = true, isBreakpoint = false),
+    EvaluationEnd(isPaused = false, isBreakpoint = false),
     EndOfAnimation(isPaused = true, isBreakpoint = false)
 }
 
@@ -321,7 +322,7 @@ fun coroutineCase(): List<TreadUiData> {
         selfExecutionArea(longExecutionLen)
         frameExecution("launch 1") {
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.Evaluation, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
                 selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
@@ -344,17 +345,17 @@ fun coroutineCase(): List<TreadUiData> {
 
     val execution2 = FrameExecution("dispatch", buildList {
         selfExecutionArea(longExecutionLen)
-        for (i in 3..6) {
+        for (i in 3..4) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("launch $i") {
                 selfExecutionArea(longExecutionLen)
             }
         }
         selfExecutionArea(shortExecutionLen)
-        frameExecution("launch 7") {
+        frameExecution("launch 5") {
             selfExecutionArea(longExecutionLen)
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.Evaluation, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.EvaluationThread, getCoroutineInjection))
 //                selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
 //                frameExecution("func") {
 //                    selfExecutionArea(shortExecutionLen)
@@ -459,8 +460,10 @@ class MyScene : Scene() {
                 timelineEvent.frame.topFrame.let { top -> threadInfos.single { it.treadUiData.execution === top } }
 
             val end = windowSize.width / 2 - timelineEvent.absPosition
-            val pass = (end - threadHoldingCurrentEvent.chunk.x).absoluteValue
-            val relativeSize = pass / windowSize.width
+            val path = (end - threadHoldingCurrentEvent.chunk.x).absoluteValue
+
+            fun timeFromPath(p: Double) = ((p / windowSize.width) * 3000).milliseconds
+            fun pathFromTime(ms: Long) = ms.toDouble() / 3000.0 * windowSize.width
 
             val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == t }) } ?: threadInfos
 
@@ -472,7 +475,7 @@ class MyScene : Scene() {
 
                     launch {
                         val start = chunk.x
-                        chunk.tween(chunk::x[start, start - pass], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
+                        chunk.tween(chunk::x[start, start - path], time = timeFromPath(path), easing = Easing.LINEAR)
                     }
                 }
             }
@@ -499,10 +502,12 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData] = c
                 }
 
-                if (event != TimelineEventType.PermanentBreakpoint) {
-                    delay(1000)
-                } else {
+                if (event == TimelineEventType.BreakpointTmpThread) {
+                    // nothing
+                } else if (event == TimelineEventType.PermanentBreakpoint) {
                     delay(100000)
+                } else {
+                    delay(1000)
                 }
 
                 val injection = timelineEvent.eventAndNextRunningType.injection
@@ -516,22 +521,31 @@ class MyScene : Scene() {
                     var relativePosition = timelineEvent.relativePosition
                     coroutineScope {
                         var c = timelineEvent.container
+                        val timeForExtendMs = 300L
                         while (true) {
                             val firstChild = c.children.firstOrNull() ?: break
                             if (firstChild !is RoundRect) break
                             launch {
-                                firstChild.tween(firstChild::width[firstChild.width, firstChild.width + extendBy], time = 300.milliseconds)
+                                firstChild.tween(firstChild::width[firstChild.width, firstChild.width + extendBy], time = timeForExtendMs.milliseconds)
                             }
 
                             for (view in c.children) {
                                 if (view.x > relativePosition) {
                                     launch {
-                                        view.tween(view::x[view.x, view.x + extendBy], time = 300.milliseconds)
+                                        view.tween(view::x[view.x, view.x + extendBy], time = timeForExtendMs.milliseconds)
                                     }
                                 }
                             }
                             relativePosition = c.x + c.width - 1
                             c = c.parent ?: break
+                        }
+                        if (event == TimelineEventType.BreakpointTmpThread) {
+                            for (info in threadInfos) {
+                                if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
+                                launch {
+                                    info.chunk.tween(info.chunk::x[info.chunk.x, info.chunk.x - pathFromTime(timeForExtendMs)], time = timeForExtendMs.milliseconds)
+                                }
+                            }
                         }
                     }
                     timelineEvent.container.addChild(injectionChunk)
@@ -555,19 +569,21 @@ class MyScene : Scene() {
                     ))
                     allTimeLineEvents.sortBy { it.absPosition }
 
-                    delay(1000)
+                    if (event != TimelineEventType.BreakpointTmpThread) {
+                        delay(1000)
+                    }
                 }
 
                 setStateText(
                     when (timelineEvent.eventAndNextRunningType.nextRunningType) {
-                        RunningType.Evaluation -> "Evaluation"
+                        RunningType.EvaluationAll, RunningType.EvaluationThread -> "Evaluation"
                         RunningType.Running -> "Running"
                         RunningType.SteppingOver -> "Stepping Over"
                     }
                 )
 
                 threadNowRunning = when (timelineEvent.eventAndNextRunningType.nextRunningType) {
-                    RunningType.Evaluation -> threadHoldingCurrentEvent.treadUiData
+                    RunningType.EvaluationAll -> threadHoldingCurrentEvent.treadUiData
                     else -> null
                 }
             }
