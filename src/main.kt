@@ -169,7 +169,7 @@ enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
     EndOfAnimation(isPaused = true, isBreakpoint = false)
 }
 
-data class TreadUiData(val treadY: Double, val execution: FrameExecution)
+class TreadUiData(val treadY: Double, val execution: FrameExecution)
 
 fun simpleOnThreadCase(): List<TreadUiData> {
     val execution = FrameExecution("main", buildList {
@@ -426,6 +426,8 @@ class MyScene : Scene() {
 
         setStateText("Running")
 
+        val stopSignMap = mutableMapOf<TreadUiData, Circle>()
+
         var threadNowRunning: TreadUiData? = null
         var currentEventIndex = 0
         while (currentEventIndex < allTimeLineEvents.size) {
@@ -441,10 +443,14 @@ class MyScene : Scene() {
 
             coroutineScope {
                 for ((treadUiData,  chunk, timelineEvents) in runningThreads) {
-                        launch {
-                            val start = chunk.x
-                            chunk.tween(chunk::x[start, start - pass], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
-                        }
+                    stopSignMap[treadUiData]?.let {
+                        threadsContainer.removeChild(it)
+                    }
+
+                    launch {
+                        val start = chunk.x
+                        chunk.tween(chunk::x[start, start - pass], time = (relativeSize*3).seconds, easing = Easing.LINEAR)
+                    }
                 }
             }
 
@@ -454,26 +460,26 @@ class MyScene : Scene() {
             if (event.isPaused) {
                 setStateText("Paused")
 
-                coroutineScope {
-                    for ((treadUiData, chunk, timelineEvents) in runningThreads) {
-                        launch {
-                            val c = Circle(pauseR).apply {
-                                anchor = Anchor.CENTER
-                                x = (windowSize.width + width) / 2 + pauseR
-                                y = treadUiData.treadY - pauseR
-                                stroke = Colors.WHITE
-                                strokeThickness = globalStrokeThickness
-                                fill = Colors.BROWN
-                            }
-                            threadsContainer.addChild(c)
-                            if (event != TimelineEventType.PermanentBreakpoint) {
-                                delay(1000)
-                            } else {
-                                delay(100000)
-                            }
-                            threadsContainer.removeChild(c)
-                        }
+                for ((treadUiData, chunk, timelineEvents) in threadInfos) {
+                    stopSignMap[treadUiData]?.let {
+                        threadsContainer.removeChild(it)
                     }
+                    val c = Circle(pauseR).apply {
+                        anchor = Anchor.CENTER
+                        x = (windowSize.width + width) / 2 + pauseR
+                        y = treadUiData.treadY - pauseR
+                        stroke = Colors.WHITE
+                        strokeThickness = globalStrokeThickness
+                        fill = Colors.BROWN
+                    }
+                    threadsContainer.addChild(c)
+                    stopSignMap[treadUiData] = c
+                }
+
+                if (event != TimelineEventType.PermanentBreakpoint) {
+                    delay(1000)
+                } else {
+                    delay(100000)
                 }
 
                 val injection = timelineEvent.eventAndNextRunningType.injection
