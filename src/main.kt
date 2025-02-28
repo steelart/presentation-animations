@@ -163,6 +163,7 @@ enum class RunningType {
 enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
     PermanentBreakpoint(isPaused = true, isBreakpoint = true),
     Breakpoint(isPaused = true, isBreakpoint = true),
+    TmpBreakpoint(isPaused = true, isBreakpoint = false),
     SkippedBreakpoint(isPaused = false, isBreakpoint = true),
     SteppingEnd(isPaused = true, isBreakpoint = false),
     EvaluationEnd(isPaused = true, isBreakpoint = false),
@@ -319,10 +320,20 @@ fun coroutineCase(): List<TreadUiData> {
     val execution1 = FrameExecution("dispatch", buildList {
         selfExecutionArea(longExecutionLen)
         frameExecution("launch 1") {
-            selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.Evaluation, getCoroutineInjection))
-            //selfExecutionArea(longExecutionLen)
+            frameExecution("boo") {
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.Evaluation, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
+                frameExecution("func") {
+                    selfExecutionArea(shortExecutionLen)
+                }
+            }
+            //selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
         }
-        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        frameExecution("launch 2") {
+            frameExecution("fff") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
         for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
@@ -333,11 +344,23 @@ fun coroutineCase(): List<TreadUiData> {
 
     val execution2 = FrameExecution("dispatch", buildList {
         selfExecutionArea(longExecutionLen)
-        for (i in 3..100) {
+        for (i in 3..6) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("launch $i") {
                 selfExecutionArea(longExecutionLen)
             }
+        }
+        selfExecutionArea(shortExecutionLen)
+        frameExecution("launch 7") {
+            selfExecutionArea(longExecutionLen)
+            frameExecution("boo") {
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.Evaluation, getCoroutineInjection))
+//                selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
+//                frameExecution("func") {
+//                    selfExecutionArea(shortExecutionLen)
+//                }
+            }
+
         }
     })
     return listOf(
@@ -491,8 +514,8 @@ class MyScene : Scene() {
                     val injectionChunk = collectedInfo.createUiFromExecution(injection, timelineEvent.absPosition + lineLikeRectWidth)
                     val extendBy = injectionChunk.width
                     var relativePosition = timelineEvent.relativePosition
-                    var c = timelineEvent.container
                     coroutineScope {
+                        var c = timelineEvent.container
                         while (true) {
                             val firstChild = c.children.firstOrNull() ?: break
                             if (firstChild !is RoundRect) break
@@ -507,7 +530,7 @@ class MyScene : Scene() {
                                     }
                                 }
                             }
-                            relativePosition = c.x + c.width
+                            relativePosition = c.x + c.width - 1
                             c = c.parent ?: break
                         }
                     }
@@ -516,7 +539,7 @@ class MyScene : Scene() {
                     injectionChunk.y = yShift/2
 
                     for (e2 in allTimeLineEvents) {
-                        if (e2.absPosition > timelineEvent.absPosition) {
+                        if (e2.frame.topFrame == timelineEvent.frame.topFrame && e2.absPosition > timelineEvent.absPosition) {
                             if (e2.frame == timelineEvent.frame) {
                                 e2.relativePosition += extendBy
                             }
