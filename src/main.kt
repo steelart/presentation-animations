@@ -335,10 +335,16 @@ fun coroutineCase(): List<TreadUiData> {
                 selfExecutionArea(shortExecutionLen)
             }
         }
-        for (i in 0..10) {
+        for (i in 50..53) {
             selfExecutionArea(shortExecutionLen)
+            frameExecution("launch $i") {
+                selfExecutionArea(longExecutionLen)
+            }
+        }
+        frameExecution("launch 56") {
+            selfExecutionArea(longExecutionLen)
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen)
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.EvaluationThread, getCoroutineInjection))
             }
         }
     })
@@ -356,12 +362,25 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(longExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.EvaluationThread, getCoroutineInjection))
-//                selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
-//                frameExecution("func") {
-//                    selfExecutionArea(shortExecutionLen)
-//                }
             }
-
+        }
+        for (i in 7..10) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("launch $i") {
+                selfExecutionArea(longExecutionLen)
+            }
+        }
+        frameExecution("launch 1") {
+            frameExecution("boo") {
+                selfExecutionArea(longExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+                selfExecutionArea(longExecutionLen)
+            }
+        }
+        for (i in 70..100) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("launch $i") {
+                selfExecutionArea(longExecutionLen)
+            }
         }
     })
     return listOf(
