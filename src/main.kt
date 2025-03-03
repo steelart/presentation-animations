@@ -10,6 +10,7 @@ import korlibs.korge.tween.tween
 import korlibs.korge.view.*
 import korlibs.korge.view.vector.gpuShapeView
 import korlibs.math.geom.Anchor
+import korlibs.math.geom.Point
 import korlibs.math.geom.RectCorners
 import korlibs.math.geom.Size
 import korlibs.math.interpolation.Easing
@@ -18,6 +19,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
+import kotlin.math.min
 
 val windowSize = Size(1024, 512)
 val threadHeight = windowSize.height/8
@@ -52,9 +54,16 @@ data class EventAndNextRunningType(val event: TimelineEventType, val nextRunning
 
 data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
-enum class FrameType {
-    NormalFunction,
-    Evaluation,
+
+sealed interface FrameType {
+    object NormalFunction : FrameType
+    object Evaluation : FrameType
+
+    data class CoroutineBorder(val hasStart: Boolean, val hasEnd: Boolean) : FrameType
+
+//    object CoroutineStart : CoroutineBorder
+//    object CoroutineMiddle : CoroutineBorder
+//    object CoroutineEnd : CoroutineBorder
 }
 
 data class FrameExecution(
@@ -66,8 +75,8 @@ data class FrameExecution(
 ) : ExecutionArea
 
 
-fun MutableList<ExecutionArea>.frameExecution(functionName: String, builder: MutableList<ExecutionArea>.() -> Unit) {
-    add(FrameExecution(functionName, mutableListOf<ExecutionArea>().apply(builder)))
+fun MutableList<ExecutionArea>.frameExecution(functionName: String, frameType: FrameType = FrameType.NormalFunction, builder: MutableList<ExecutionArea>.() -> Unit) {
+    add(FrameExecution(functionName, mutableListOf<ExecutionArea>().apply(builder), frameType))
 }
 
 fun MutableList<ExecutionArea>.selfExecutionArea(width: Number, eventAndNextRunningType: EventAndNextRunningType? = null) {
@@ -144,16 +153,66 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
         }
     }
 
-    val fillColor = if (execution.frameType == FrameType.NormalFunction) {
-        depthColorList[execution.depth % depthColorList.size]
-    } else {
+    val frameType = execution.frameType
+
+    val fillColor = if (frameType == FrameType.Evaluation) {
         Colors.ORANGE
+    } else {
+        depthColorList[execution.depth % depthColorList.size]
     }
+
     container.addChildAt(text, 0)
-    RoundRect(Size(startingX, rectHeight), RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = globalStrokeThickness).let {
+    val frameSize = Size(startingX, rectHeight)
+    val r = RoundRect(frameSize, RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = globalStrokeThickness).also {
         container.addChildAt(it, 0)
     }
+
+    if (frameType is FrameType.CoroutineBorder) {
+        addCoroutineOutline(container, frameType, r)
+    }
+
     return container
+}
+
+fun addCoroutineOutline(container: Container, frameType: FrameType.CoroutineBorder, r: RoundRect) {
+    val neededColor = Colors.YELLOW
+
+    val solidGap = threadHeight / 10.0
+    val dottedGap = solidGap/2.0
+
+
+    val frameSize = r.size
+    val centerY = frameSize.height * 3 / 10
+
+    container.solidRect(frameSize.width, threadHeight / 20.0) {
+        color = neededColor
+        pos = Point(0.0, -threadHeight + centerY)
+    }
+
+    container.solidRect(frameSize.width, threadHeight / 20.0) {
+        color = neededColor
+        pos = Point(0.0, threadHeight + centerY)
+    }
+
+
+    for ((xP, isBorder) in listOf(0.0 to frameType.hasStart, frameSize.width to frameType.hasEnd)) {
+
+        container.graphics {
+            stroke(neededColor, lineWidth = threadHeight / 20.0) {
+                var y = -threadHeight + centerY
+                if (isBorder) {
+                    moveTo(0.0, y); lineTo(0.0, threadHeight + centerY)
+                } else {
+                    while (y < threadHeight + centerY) {
+                        moveTo(0.0, y); lineTo(0.0, min(y + solidGap, threadHeight + centerY))
+                        y += solidGap + dottedGap
+                    }
+                }
+            }
+        }.also {
+            it.x = xP
+        }
+    }
 }
 
 
@@ -286,7 +345,9 @@ fun suspendThreadModeCase(): List<TreadUiData> {
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
+        selfExecutionArea(longExecutionLen)
         selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        selfExecutionArea(longExecutionLen)
         for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
@@ -338,7 +399,8 @@ fun coroutineCase(): List<TreadUiData> {
 
     val execution1 = FrameExecution("dispatch", buildList {
         selfExecutionArea(longExecutionLen)
-        frameExecution("launch 1") {
+        frameExecution("launch 1", frameType = FrameType.CoroutineBorder(true, false)) {
+            selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
                 selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
@@ -348,6 +410,7 @@ fun coroutineCase(): List<TreadUiData> {
             }
             //selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
         }
+        selfExecutionArea(longExecutionLen)
         frameExecution("launch 2") {
             frameExecution("fff") {
                 selfExecutionArea(shortExecutionLen)
@@ -570,6 +633,12 @@ class MyScene : Scene() {
                                 if (view.x > relativePosition) {
                                     launch {
                                         view.tween(view::x[view.x, view.x + extendBy], time = timeForExtendMs.milliseconds)
+                                    }
+                                }
+                                if (view is SolidRect) {
+                                    // coroutine border
+                                    launch {
+                                        view.tween(view::width[view.width, view.width + extendBy], time = timeForExtendMs.milliseconds)
                                     }
                                 }
                             }
