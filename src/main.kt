@@ -1,4 +1,5 @@
 import korlibs.image.color.Colors
+import korlibs.image.color.RGBA
 import korlibs.image.paint.LinearGradientPaint
 import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
 import korlibs.korge.Korge
@@ -30,6 +31,11 @@ val globalTextSize = threadHeight / 2
 val textXShift = globalTextSize/4
 val pauseR = threadHeight / 5
 
+val longExecutionLen = windowSize.width/5
+val shortExecutionLen = longExecutionLen/4
+
+val slowDownAnimationCoefficient = 5000.0
+
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
     val sceneContainer = sceneContainer()
@@ -46,10 +52,18 @@ data class EventAndNextRunningType(val event: TimelineEventType, val nextRunning
 
 data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
-data class FrameExecution(val functionName: String, val areas: List<ExecutionArea>, var depth: Int = 0, var parent: FrameExecution? = null) : ExecutionArea
+enum class FrameType {
+    NormalFunction,
+    Evaluation,
+}
 
-val longExecutionLen = windowSize.width/5
-val shortExecutionLen = longExecutionLen/4
+data class FrameExecution(
+    val functionName: String,
+    val areas: List<ExecutionArea>,
+    val frameType: FrameType = FrameType.NormalFunction,
+    var depth: Int = 0,
+    var parent: FrameExecution? = null
+) : ExecutionArea
 
 
 fun MutableList<ExecutionArea>.frameExecution(functionName: String, builder: MutableList<ExecutionArea>.() -> Unit) {
@@ -72,7 +86,7 @@ fun adjustDepth(execution: FrameExecution, depth: Int, parent: FrameExecution?) 
     }
 }
 
-val depthColorList = listOf(Colors.ORANGE, Colors.BLUE, Colors.DARKGREEN)
+val depthColorList = listOf(RGBA(100, 100, 150), RGBA(100, 100, 190), RGBA(100, 100, 230))
 
 data class TimelineEvent(
     var absPosition: Double,
@@ -130,7 +144,11 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
         }
     }
 
-    val fillColor = depthColorList[execution.depth % depthColorList.size]
+    val fillColor = if (execution.frameType == FrameType.NormalFunction) {
+        depthColorList[execution.depth % depthColorList.size]
+    } else {
+        Colors.ORANGE
+    }
     container.addChildAt(text, 0)
     RoundRect(Size(startingX, rectHeight), RectCorners(cornerR), fill = fillColor, stroke = Colors.WHITE, strokeThickness = globalStrokeThickness).let {
         container.addChildAt(it, 0)
@@ -315,7 +333,7 @@ fun suspendThreadModeCase(): List<TreadUiData> {
 fun coroutineCase(): List<TreadUiData> {
     val getCoroutineInjection = FrameExecution("getCoroutineId", buildList {
         selfExecutionArea(shortExecutionLen)
-    })
+    }, frameType = FrameType.Evaluation)
 
 
     val execution1 = FrameExecution("dispatch", buildList {
@@ -481,8 +499,8 @@ class MyScene : Scene() {
             val end = windowSize.width / 2 - timelineEvent.absPosition
             val path = (end - threadHoldingCurrentEvent.chunk.x).absoluteValue
 
-            fun timeFromPath(p: Double) = ((p / windowSize.width) * 3000).milliseconds
-            fun pathFromTime(ms: Long) = ms.toDouble() / 3000.0 * windowSize.width
+            fun timeFromPath(p: Double) = ((p / windowSize.width) * slowDownAnimationCoefficient).milliseconds
+            fun pathFromTime(ms: Long) = ms.toDouble() / slowDownAnimationCoefficient * windowSize.width
 
             val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == t }) } ?: threadInfos
 
