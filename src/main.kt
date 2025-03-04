@@ -38,13 +38,14 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val speedupAllAnimationCoefficient = 1.0
+val speedupAllAnimationCoefficient = 2.0
 
 val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
 
 val timeForExtendMs = (300L / speedupAllAnimationCoefficient).toLong()
 val timeShowCoroutineFilterMs = (1500L / speedupAllAnimationCoefficient).toLong()
 val waitOnBreakpoint = (1000L / speedupAllAnimationCoefficient).toLong()
+val shortWaitOnPause = (300L / speedupAllAnimationCoefficient).toLong()
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
     val sceneContainer = sceneContainer()
@@ -265,13 +266,15 @@ sealed interface TimelineEventType {
     val isTechnical: Boolean get() = false
 
     interface AllPaused : TimelineEventType
+    interface PermanentPaused : TimelineEventType
+
     interface ShortPaused : TimelineEventType {
         override val isTechnical: Boolean get() = true
     }
 
     abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
 
-    object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+    object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), PermanentPaused
     object SuspendAllBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), AllPaused
 
     object SkippedBreakpoint : TimelineEventTypeImpl(isPaused = false, isBreakpoint = true)
@@ -280,6 +283,10 @@ sealed interface TimelineEventType {
     object EndOfAnimation : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
 
     class SetFilterEvent(val filterText: String) : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
+
+    object SuspendThreadPause : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
+
+    object SuspendAllSteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), AllPaused, PermanentPaused
 
     object TechnicalThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true) {
         override val isTechnical: Boolean get() = true
@@ -461,7 +468,7 @@ class MyScene : Scene() {
 
                 if (event.isTechnical) {
                     // nothing
-                } else if (event == TimelineEventType.PermanentBreakpoint) {
+                } else if (event is TimelineEventType.PermanentPaused) {
                     delay(100000)
                 } else {
                     coroutineScope {
@@ -505,14 +512,14 @@ class MyScene : Scene() {
                             relativePosition = c.x + c.width - 1
                             c = c.parent ?: break
                         }
-                        if (event is TimelineEventType.ShortPaused) {
-                            for (info in allThreadInfos) {
-                                if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
-                                launch {
-                                    info.chunk.tween(info.chunk::x[info.chunk.x, info.chunk.x - pathFromTime(timeForExtendMs)], time = timeForExtendMs.milliseconds)
-                                }
-                            }
-                        }
+//                        if (event is TimelineEventType.ShortPaused) {
+//                            for (info in allThreadInfos) {
+//                                if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
+//                                launch {
+//                                    info.chunk.tween(info.chunk::x[info.chunk.x, info.chunk.x - pathFromTime(timeForExtendMs)], time = timeForExtendMs.milliseconds)
+//                                }
+//                            }
+//                        }
                         continueRunRemainRunning(timeForExtendMs)
                     }
                     timelineEvent.container.addChild(injectionChunk)
@@ -554,6 +561,13 @@ class MyScene : Scene() {
                             }
                         }
                         continueRunRemainRunning(timeShowCoroutineFilterMs)
+                    }
+                } else if (event is TimelineEventType.ShortPaused){
+                    coroutineScope {
+                        launch {
+                            delay(shortWaitOnPause)
+                        }
+                        continueRunRemainRunning(shortWaitOnPause)
                     }
                 }
 

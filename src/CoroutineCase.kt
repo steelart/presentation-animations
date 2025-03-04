@@ -130,6 +130,11 @@ fun coroutineCase(): List<TreadUiData> {
                         TimelineEventType.TechnicalThreadBreakpoint, RunningType.ResumeAll, getCoroutineInjection,
                         EventAndNextRunningType(TimelineEventType.ConditionCheck("Coroutine#1 == Coroutine#1"), RunningType.ResumeAll)
                     ))
+                    repeat(3) {
+                        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendThreadPause, RunningType.ResumeAll)
+                    }
+                    selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingEnd, RunningType.ExecutionEnd)
+                    selfExecutionArea(longExecutionLen)
                 }
             }
             selfExecutionArea(longExecutionLen)
