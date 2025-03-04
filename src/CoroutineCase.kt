@@ -1,3 +1,4 @@
+import TimelineEventType
 
 fun coroutineCase(): List<TreadUiData> {
     val getCoroutineInjection = FrameExecution("getCoroutineId", buildList {
@@ -32,7 +33,7 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
-                selfExecutionArea(shortExecutionLen, TimelineEventType.TmpBreakpoint, RunningType.SteppingOver)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.SteppingOver)
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
                 }

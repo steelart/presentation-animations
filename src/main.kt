@@ -39,6 +39,7 @@ val shortExecutionLen = longExecutionLen/4
 
 val slowDownAnimationCoefficient = 5000.0
 
+val timeForExtendMs = 300L
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
     val sceneContainer = sceneContainer()
@@ -239,15 +240,23 @@ enum class RunningType {
 }
 
 
-enum class TimelineEventType(val isPaused: Boolean, val isBreakpoint: Boolean) {
-    PermanentBreakpoint(isPaused = true, isBreakpoint = true),
-    Breakpoint(isPaused = true, isBreakpoint = true),
-    BreakpointTmpThread(isPaused = true, isBreakpoint = false),
-    TmpBreakpoint(isPaused = true, isBreakpoint = false),
-    SkippedBreakpoint(isPaused = false, isBreakpoint = true),
-    SteppingEnd(isPaused = true, isBreakpoint = false),
-    EvaluationEnd(isPaused = false, isBreakpoint = false),
-    EndOfAnimation(isPaused = true, isBreakpoint = false)
+sealed interface TimelineEventType {
+    val isPaused: Boolean
+    val isBreakpoint: Boolean
+
+    interface ShortPaused : TimelineEventType
+
+    abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
+
+    object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+    object Breakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+    object BreakpointTmpThread : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
+    object SkippedBreakpoint : TimelineEventTypeImpl(isPaused = false, isBreakpoint = true)
+    object SteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
+    object EvaluationEnd : TimelineEventTypeImpl(isPaused = false, isBreakpoint = false)
+    object EndOfAnimation : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
+
+    class SetFilterEvent(val filterText: String) : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
 }
 
 class TreadUiData(val treadY: Double, val execution: FrameExecution)
@@ -409,6 +418,18 @@ class MyScene : Scene() {
             it.x = windowSize.width - rightShadowWidth
         }
 
+
+        var filterText: Text? = null
+        fun setFilterText(text: String): Text {
+            if (filterText != null) removeChild(filterText)
+            return text(text, textSize = functionTextSize, color = Colors.ORANGE) {
+                y = 0.0
+                x = 0.0
+            }.also {
+                filterText = it
+            }
+        }
+
         var stateText: Text? = null
         fun setStateText(text: String) {
             if (stateText != null) removeChild(stateText)
@@ -503,7 +524,8 @@ class MyScene : Scene() {
                 }
             }
 
-            val event = timelineEvent.eventAndNextRunningType.event
+            val (event, nextRunningType, injection) = timelineEvent.eventAndNextRunningType
+
             if (event == TimelineEventType.EndOfAnimation) break
 
             if (event.isPaused) {
@@ -525,15 +547,13 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData] = c
                 }
 
-                if (event == TimelineEventType.BreakpointTmpThread) {
+                if (event is TimelineEventType.ShortPaused) {
                     // nothing
                 } else if (event == TimelineEventType.PermanentBreakpoint) {
                     delay(100000)
                 } else {
                     delay(1000)
                 }
-
-                val injection = timelineEvent.eventAndNextRunningType.injection
 
                 if (injection != null) {
                     adjustDepth(injection, timelineEvent.frame.depth + 1, timelineEvent.frame)
@@ -544,7 +564,6 @@ class MyScene : Scene() {
                     var relativePosition = timelineEvent.relativePosition
                     coroutineScope {
                         var c = timelineEvent.container
-                        val timeForExtendMs = 300L
                         while (true) {
                             val firstChild = c.children.firstOrNull() ?: break
                             if (firstChild !is RoundRect) break
@@ -568,7 +587,7 @@ class MyScene : Scene() {
                             relativePosition = c.x + c.width - 1
                             c = c.parent ?: break
                         }
-                        if (event == TimelineEventType.BreakpointTmpThread) {
+                        if (event is TimelineEventType.ShortPaused) {
                             for (info in threadInfos) {
                                 if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
                                 launch {
@@ -598,20 +617,26 @@ class MyScene : Scene() {
                     ))
                     allTimeLineEvents.sortBy { it.absPosition }
 
-                    if (event != TimelineEventType.BreakpointTmpThread) {
+                    if (event !is TimelineEventType.ShortPaused) {
                         delay(1000)
                     }
                 }
 
+                if (event is TimelineEventType.SetFilterEvent) {
+                    setFilterText("Stepping Filter: " + event.filterText).let {
+                        it.tween(it::alpha[0.0, 1.0], time = timeForExtendMs.milliseconds)
+                    }
+                }
+
                 setStateText(
-                    when (timelineEvent.eventAndNextRunningType.nextRunningType) {
+                    when (nextRunningType) {
                         RunningType.EvaluationAll, RunningType.EvaluationThread -> "Evaluation"
                         RunningType.Running -> "Running"
                         RunningType.SteppingOver -> "Stepping Over"
                     }
                 )
 
-                threadNowRunning = when (timelineEvent.eventAndNextRunningType.nextRunningType) {
+                threadNowRunning = when (nextRunningType) {
                     RunningType.EvaluationAll -> threadHoldingCurrentEvent.treadUiData
                     else -> null
                 }
