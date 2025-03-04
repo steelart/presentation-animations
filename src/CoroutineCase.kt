@@ -1,5 +1,3 @@
-import TimelineEventType
-
 fun coroutineCase(): List<TreadUiData> {
     val getCoroutineInjection = FrameExecution("getCoroutineId", buildList {
         selfExecutionArea(shortExecutionLen)
@@ -32,7 +30,7 @@ fun coroutineCase(): List<TreadUiData> {
             }
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.ResumeThread, getCoroutineInjection))
                 selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.SteppingOver("func()"))
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
@@ -50,7 +48,7 @@ fun coroutineCase(): List<TreadUiData> {
         frameExecution("launch 56") {
             selfExecutionArea(longExecutionLen)
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.EvaluationThread, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.ResumeThread, getCoroutineInjection))
             }
         }
     })
@@ -82,37 +80,26 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(longExecutionLen)
         }
 
+        selfExecutionArea(longExecutionLen)
 
-        for (i in 3..4) {
-            selfExecutionArea(shortExecutionLen)
-            frameExecution("launch $i") {
-                selfExecutionArea(longExecutionLen)
-            }
-        }
-        selfExecutionArea(shortExecutionLen)
-        frameExecution("launch 5") {
+        frameExecution("", frameType = FrameType.CoroutineBorder("Coroutine#4", true, false)) {
             selfExecutionArea(longExecutionLen)
-            frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.EvaluationThread, getCoroutineInjection))
-            }
-        }
-        for (i in 7..10) {
-            selfExecutionArea(shortExecutionLen)
-            frameExecution("launch $i") {
+            frameExecution("someAnotherFunc") {
+                selfExecutionArea(longExecutionLen)
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.ResumeThread, getCoroutineInjection))
                 selfExecutionArea(longExecutionLen)
             }
         }
-        frameExecution("launch 1") {
-            frameExecution("boo") {
-                selfExecutionArea(longExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+
+        selfExecutionArea(longExecutionLen)
+
+        frameExecution("", frameType = FrameType.CoroutineBorder("Coroutine#4", false, true)) {
+            frameExecution("someAnotherFunc") {
                 selfExecutionArea(longExecutionLen)
+//                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationThread, getCoroutineInjection))
+//                selfExecutionArea(longExecutionLen)
             }
-        }
-        for (i in 70..100) {
-            selfExecutionArea(shortExecutionLen)
-            frameExecution("launch $i") {
-                selfExecutionArea(longExecutionLen)
-            }
+            selfExecutionArea(longExecutionLen)
         }
     })
     return listOf(

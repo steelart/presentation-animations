@@ -234,13 +234,16 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
 }
 
 sealed interface RunningType {
-    data object Running : RunningType
-    data object EvaluationAll : RunningType
-    data object EvaluationThread : RunningType
+    data object ResumeAll : RunningType
+    data object ResumeThread : RunningType
 
-    data object ExecutionEnd : RunningType
+    sealed interface ChangingState : RunningType
 
-    data class SteppingOver(val functionName: String) : RunningType
+    data object Running : ChangingState
+
+    data object ExecutionEnd : RunningType, ChangingState
+
+    data class SteppingOver(val functionName: String) : RunningType, ChangingState
 }
 
 sealed interface TimelineEventType {
@@ -490,17 +493,19 @@ class MyScene : Scene() {
                     }
                 }
 
-                setStateText(
-                    when (nextRunningType) {
-                        RunningType.EvaluationAll, RunningType.EvaluationThread -> "Evaluation"
-                        RunningType.Running -> "Running"
-                        is RunningType.SteppingOver -> "Stepping Over ${nextRunningType.functionName}"
-                        RunningType.ExecutionEnd -> "Done"
-                    }
-                )
+                if (nextRunningType is RunningType.ChangingState) {
+                    setStateText(
+                        when (nextRunningType) {
+                            RunningType.ResumeAll, RunningType.ResumeThread -> "Evaluation"
+                            RunningType.Running -> "Running"
+                            is RunningType.SteppingOver -> "Stepping Over ${nextRunningType.functionName}"
+                            RunningType.ExecutionEnd -> "Done"
+                        }
+                    )
+                }
 
                 threadNowRunning = when (nextRunningType) {
-                    RunningType.EvaluationAll -> threadHoldingCurrentEvent.treadUiData
+                    RunningType.ResumeThread -> threadHoldingCurrentEvent.treadUiData
                     else -> null
                 }
             }
