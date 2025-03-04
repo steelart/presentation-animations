@@ -33,7 +33,7 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
-                selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.SteppingOver)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.SteppingOver("func()"))
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
                 }

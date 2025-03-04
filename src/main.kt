@@ -40,6 +40,7 @@ val shortExecutionLen = longExecutionLen/4
 val slowDownAnimationCoefficient = 5000.0
 
 val timeForExtendMs = 300L
+val timeShowCoroutineFilterMs = 1500L
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
     val sceneContainer = sceneContainer()
@@ -232,13 +233,15 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
     }
 }
 
-enum class RunningType {
-    Running,
-    SteppingOver,
-    EvaluationAll,
-    EvaluationThread,
-}
+sealed interface RunningType {
+    data object Running : RunningType
+    data object EvaluationAll : RunningType
+    data object EvaluationThread : RunningType
 
+    data object ExecutionEnd : RunningType
+
+    data class SteppingOver(val functionName: String) : RunningType
+}
 
 sealed interface TimelineEventType {
     val isPaused: Boolean
@@ -266,11 +269,11 @@ fun simpleOnThreadCase(): List<TreadUiData> {
         selfExecutionArea(longExecutionLen)
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
-            selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
+            selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("boo"))
             frameExecution("boo") {
                 selfExecutionArea(longExecutionLen)
             }
-            selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver)
+            selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver("bar"))
             frameExecution("bar") {
                 selfExecutionArea(longExecutionLen, TimelineEventType.Breakpoint, RunningType.Running)
             }
@@ -284,7 +287,7 @@ fun simpleOnThreadCase(): List<TreadUiData> {
 fun twoThreadsCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
         }
@@ -315,7 +318,7 @@ fun twoThreadsCase(): List<TreadUiData> {
 fun breakpointInAnotherThreadCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
@@ -333,7 +336,7 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
 
         frameExecution("another") {
             selfExecutionArea(longExecutionLen)
-            selfExecutionArea(longExecutionLen, TimelineEventType.SkippedBreakpoint, RunningType.SteppingOver)
+            selfExecutionArea(longExecutionLen, TimelineEventType.SkippedBreakpoint, RunningType.SteppingOver("some"))
         }
 
         for (i in 0..100) {
@@ -352,7 +355,7 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
 fun suspendThreadModeCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.SteppingOver)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
@@ -541,7 +544,7 @@ class MyScene : Scene() {
                         y = treadUiData.treadY - pauseR
                         stroke = Colors.WHITE
                         strokeThickness = globalStrokeThickness
-                        fill = Colors.BROWN
+                        fill = if (event is TimelineEventType.ShortPaused) Colors.YELLOW else Colors.BROWN
                     }
                     threadsContainer.addChild(c)
                     stopSignMap[treadUiData] = c
@@ -611,7 +614,7 @@ class MyScene : Scene() {
 
                     allTimeLineEvents.add(TimelineEvent(
                         timelineEvent.absPosition + lineLikeRectWidth + extendBy,
-                        EventAndNextRunningType(TimelineEventType.EvaluationEnd, RunningType.SteppingOver),
+                        EventAndNextRunningType(TimelineEventType.EvaluationEnd, RunningType.ExecutionEnd),
                         injection,
                         injectionChunk,
                     ))
@@ -624,7 +627,7 @@ class MyScene : Scene() {
 
                 if (event is TimelineEventType.SetFilterEvent) {
                     setFilterText("Stepping Filter: " + event.filterText).let {
-                        it.tween(it::alpha[0.0, 1.0], time = timeForExtendMs.milliseconds)
+                        it.tween(it::alpha[0.0, 1.0], time = timeShowCoroutineFilterMs.milliseconds)
                     }
                 }
 
@@ -632,7 +635,8 @@ class MyScene : Scene() {
                     when (nextRunningType) {
                         RunningType.EvaluationAll, RunningType.EvaluationThread -> "Evaluation"
                         RunningType.Running -> "Running"
-                        RunningType.SteppingOver -> "Stepping Over"
+                        is RunningType.SteppingOver -> "Stepping Over ${nextRunningType.functionName}"
+                        RunningType.ExecutionEnd -> "Done"
                     }
                 )
 
