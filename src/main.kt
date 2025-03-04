@@ -38,7 +38,7 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val speedupAllAnimationCoefficient = 2.0
+val speedupAllAnimationCoefficient = 1.0
 
 val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
 
@@ -79,7 +79,8 @@ class FrameExecution(
     val areas: List<ExecutionArea>,
     val frameType: FrameType = FrameType.NormalFunction,
     var depth: Int = 0,
-    var parent: FrameExecution? = null
+    var parent: FrameExecution? = null,
+    var topChunk: Container? = null,
 ) : ExecutionArea
 
 
@@ -117,10 +118,13 @@ val FrameExecution.topFrame: FrameExecution get() = parent?.topFrame ?: this
 
 class CollectedInfo {
     val breakPointPositions = mutableListOf<TimelineEvent>()
+    var topChunk: Container? = null
 }
 
 fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameShift: Double): Container {
     val container = Container()
+    if (topChunk == null) topChunk = container
+    execution.topChunk = topChunk
     val rectHeight = threadHeight - yShift*execution.depth
 
     val text = Text(execution.functionName, textSize = functionTextSize, alignment = MIDDLE_LEFT).also {
@@ -472,6 +476,7 @@ class MyScene : Scene() {
                     adjustDepth(injection, timelineEvent.frame.depth + 1, timelineEvent.frame)
 
                     val collectedInfo = CollectedInfo()
+                    collectedInfo.topChunk = timelineEvent.frame.topChunk
                     val injectionChunk = collectedInfo.createUiFromExecution(injection, timelineEvent.absPosition + lineLikeRectWidth)
                     val extendBy = injectionChunk.width
                     var relativePosition = timelineEvent.relativePosition
@@ -529,7 +534,7 @@ class MyScene : Scene() {
                         injection,
                         injectionChunk,
                     ))
-                    allTimeLineEvents.sortBy { it.absPosition }
+                    //allTimeLineEvents.sortBy { it.absPosition }
 
                     if (event !is TimelineEventType.ShortPaused) {
                         coroutineScope {
@@ -586,6 +591,10 @@ class MyScene : Scene() {
                     else -> null
                 }
             }
+            allTimeLineEvents.sortBy {
+                it.absPosition + it.frame.topChunk!!.x
+            }
+
             currentEventIndex++
         }
 
