@@ -29,8 +29,9 @@ val globalStrokeThickness = yShift / 3
 val cornerR = threadHeight / 20
 val lineLikeRectWidth = cornerR * 2
 
-val globalTextSize = threadHeight / 2
-val textXShift = globalTextSize/4
+val functionTextSize = threadHeight / 2
+val coroutineTextSize = threadHeight / 3
+val textXShift = functionTextSize/4
 val pauseR = threadHeight / 5
 
 val longExecutionLen = windowSize.width/5
@@ -59,11 +60,7 @@ sealed interface FrameType {
     object NormalFunction : FrameType
     object Evaluation : FrameType
 
-    data class CoroutineBorder(val hasStart: Boolean, val hasEnd: Boolean) : FrameType
-
-//    object CoroutineStart : CoroutineBorder
-//    object CoroutineMiddle : CoroutineBorder
-//    object CoroutineEnd : CoroutineBorder
+    data class CoroutineBorder(val coroutineName: String, val hasStart: Boolean, val hasEnd: Boolean) : FrameType
 }
 
 data class FrameExecution(
@@ -115,7 +112,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
     val container = Container()
     val rectHeight = threadHeight - yShift*execution.depth
 
-    val text = Text(execution.functionName, textSize = globalTextSize, alignment = MIDDLE_LEFT).also {
+    val text = Text(execution.functionName, textSize = functionTextSize, alignment = MIDDLE_LEFT).also {
         it.y = rectHeight/2
         it.x = textXShift
     }
@@ -176,6 +173,8 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
 
 fun addCoroutineOutline(container: Container, frameType: FrameType.CoroutineBorder, r: RoundRect) {
     val neededColor = Colors.YELLOW
+    val lineThickness = threadHeight / 20.0
+    val hBorderShiftFromCenter = threadHeight*0.8
 
     val solidGap = threadHeight / 10.0
     val dottedGap = solidGap/2.0
@@ -184,27 +183,30 @@ fun addCoroutineOutline(container: Container, frameType: FrameType.CoroutineBord
     val frameSize = r.size
     val centerY = frameSize.height * 3 / 10
 
-    container.solidRect(frameSize.width, threadHeight / 20.0) {
+    container.solidRect(frameSize.width, lineThickness) {
         color = neededColor
-        pos = Point(0.0, -threadHeight + centerY)
+        pos = Point(0.0, -hBorderShiftFromCenter + centerY)
     }
 
-    container.solidRect(frameSize.width, threadHeight / 20.0) {
+    container.solidRect(frameSize.width, lineThickness) {
         color = neededColor
-        pos = Point(0.0, threadHeight + centerY)
+        pos = Point(0.0, hBorderShiftFromCenter + centerY)
     }
 
+    container.text(frameType.coroutineName, textSize = coroutineTextSize, color = neededColor) {
+        pos = Point(lineThickness, -hBorderShiftFromCenter + centerY + lineThickness)
+    }
 
     for ((xP, isBorder) in listOf(0.0 to frameType.hasStart, frameSize.width to frameType.hasEnd)) {
 
         container.graphics {
-            stroke(neededColor, lineWidth = threadHeight / 20.0) {
-                var y = -threadHeight + centerY
+            stroke(neededColor, lineWidth = lineThickness) {
+                var y = -hBorderShiftFromCenter + centerY
                 if (isBorder) {
-                    moveTo(0.0, y); lineTo(0.0, threadHeight + centerY)
+                    moveTo(0.0, y); lineTo(0.0, hBorderShiftFromCenter + centerY)
                 } else {
-                    while (y < threadHeight + centerY) {
-                        moveTo(0.0, y); lineTo(0.0, min(y + solidGap, threadHeight + centerY))
+                    while (y < hBorderShiftFromCenter + centerY) {
+                        moveTo(0.0, y); lineTo(0.0, min(y + solidGap, hBorderShiftFromCenter + centerY))
                         y += solidGap + dottedGap
                     }
                 }
@@ -398,8 +400,26 @@ fun coroutineCase(): List<TreadUiData> {
 
 
     val execution1 = FrameExecution("dispatch", buildList {
-        selfExecutionArea(longExecutionLen)
-        frameExecution("launch 1", frameType = FrameType.CoroutineBorder(true, false)) {
+        selfExecutionArea(shortExecutionLen)
+        frameExecution("launch 1", frameType = FrameType.CoroutineBorder("Coroutine#1", true, false)) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("fff") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+
+        selfExecutionArea(shortExecutionLen)
+
+        frameExecution("launch 3", frameType = FrameType.CoroutineBorder("Coroutine#3", true, false)) {
+            selfExecutionArea(shortExecutionLen)
+            frameExecution("fff") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+
+        selfExecutionArea(longExecutionLen*1.5)
+
+        frameExecution("", frameType = FrameType.CoroutineBorder("Coroutine#1", false, false)) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.EvaluationAll, getCoroutineInjection))
@@ -410,12 +430,7 @@ fun coroutineCase(): List<TreadUiData> {
             }
             //selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
         }
-        selfExecutionArea(longExecutionLen)
-        frameExecution("launch 2") {
-            frameExecution("fff") {
-                selfExecutionArea(shortExecutionLen)
-            }
-        }
+
         for (i in 50..53) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("launch $i") {
@@ -431,7 +446,23 @@ fun coroutineCase(): List<TreadUiData> {
     })
 
     val execution2 = FrameExecution("dispatch", buildList {
-        selfExecutionArea(longExecutionLen)
+        selfExecutionArea(shortExecutionLen*1.5)
+
+        frameExecution("launch 2", frameType = FrameType.CoroutineBorder("Coroutine#2", true, false)) {
+            selfExecutionArea(longExecutionLen)
+            frameExecution("ggg") {
+                selfExecutionArea(shortExecutionLen)
+            }
+        }
+
+        selfExecutionArea(shortExecutionLen)
+
+        frameExecution("", frameType = FrameType.CoroutineBorder("Coroutine#1", false, false)) {
+            frameExecution("fff") {
+                selfExecutionArea(longExecutionLen)
+            }
+        }
+
         for (i in 3..4) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("launch $i") {
@@ -489,7 +520,7 @@ class MyScene : Scene() {
         var stateText: Text? = null
         fun setStateText(text: String) {
             if (stateText != null) removeChild(stateText)
-            stateText = text(text, textSize = globalTextSize) {
+            stateText = text(text, textSize = functionTextSize) {
                 y = 0.0
                 x = windowSize.width / 2 + lineLikeRectWidth
             }
