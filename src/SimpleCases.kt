@@ -4,13 +4,13 @@ fun simpleOnThreadCase(): List<TreadUiData> {
         selfExecutionArea(longExecutionLen)
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
-            selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("boo"))
+            selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllBreakpoint, RunningType.SteppingOver("boo"))
             frameExecution("boo") {
                 selfExecutionArea(longExecutionLen)
             }
             selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver("bar"))
             frameExecution("bar") {
-                selfExecutionArea(longExecutionLen, TimelineEventType.Breakpoint, RunningType.Running)
+                selfExecutionArea(longExecutionLen, TimelineEventType.SuspendAllBreakpoint, RunningType.Running)
             }
         }
         selfExecutionArea(shortExecutionLen)
@@ -22,7 +22,7 @@ fun simpleOnThreadCase(): List<TreadUiData> {
 fun twoThreadsCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("foo"))
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllBreakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
         }
@@ -53,7 +53,7 @@ fun twoThreadsCase(): List<TreadUiData> {
 fun breakpointInAnotherThreadCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.Breakpoint, RunningType.SteppingOver("foo"))
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllBreakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }

@@ -15,6 +15,7 @@ import korlibs.math.geom.RectCorners
 import korlibs.math.geom.Size
 import korlibs.math.interpolation.Easing
 import korlibs.time.milliseconds
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -37,10 +38,13 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val slowDownAnimationCoefficient = 5000.0
+val speedupAllAnimationCoefficient = 2.0
 
-val timeForExtendMs = 300L
-val timeShowCoroutineFilterMs = 1500L
+val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
+
+val timeForExtendMs = (300L / speedupAllAnimationCoefficient).toLong()
+val timeShowCoroutineFilterMs = (1500L / speedupAllAnimationCoefficient).toLong()
+val waitOnBreakpoint = (1000L / speedupAllAnimationCoefficient).toLong()
 
 suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
     val sceneContainer = sceneContainer()
@@ -55,7 +59,7 @@ sealed interface ExecutionArea
 
 data class EventAndNextRunningType(val event: TimelineEventType, val nextRunningType: RunningType, val injection: FrameExecution? = null)
 
-data class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
+class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
 
 sealed interface FrameType {
@@ -65,7 +69,7 @@ sealed interface FrameType {
     data class CoroutineBorder(val coroutineName: String, val hasStart: Boolean, val hasEnd: Boolean) : FrameType
 }
 
-data class FrameExecution(
+class FrameExecution(
     val functionName: String,
     val areas: List<ExecutionArea>,
     val frameType: FrameType = FrameType.NormalFunction,
@@ -250,13 +254,16 @@ sealed interface TimelineEventType {
     val isPaused: Boolean
     val isBreakpoint: Boolean
 
+    interface AllPaused : TimelineEventType
     interface ShortPaused : TimelineEventType
 
     abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
 
     object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
-    object Breakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
-    object BreakpointTmpThread : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
+    object SuspendAllBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), AllPaused
+
+    object SuspendThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+
     object SkippedBreakpoint : TimelineEventTypeImpl(isPaused = false, isBreakpoint = true)
     object SteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
     object EvaluationEnd : TimelineEventTypeImpl(isPaused = false, isBreakpoint = false)
@@ -308,7 +315,7 @@ class MyScene : Scene() {
 
         data class ThreadInfo(val treadUiData: TreadUiData, val chunk: Container, val timelineEvents: MutableList<TimelineEvent>)
 
-        val threadInfos = mutableListOf<ThreadInfo>()
+        val allThreadInfos = mutableListOf<ThreadInfo>()
 
         for (treadUiData in treadUiDataList) {
             val execution = treadUiData.execution
@@ -336,15 +343,15 @@ class MyScene : Scene() {
 
             chunk.x = windowSize.width
 
-            threadInfos.add(ThreadInfo(treadUiData, chunk, if (isSynchronous) allTimeLineEvents else timelineEvents))
+            allThreadInfos.add(ThreadInfo(treadUiData, chunk, if (isSynchronous) allTimeLineEvents else timelineEvents))
         }
 
         val endEvent = TimelineEvent(
-            threadInfos.maxOf { it.chunk.width },
+            allThreadInfos.maxOf { it.chunk.width },
             EventAndNextRunningType(TimelineEventType.EndOfAnimation, RunningType.Running),
             // useless here, just something
-            threadInfos.first().treadUiData.execution,
-            threadInfos.first().chunk,
+            allThreadInfos.first().treadUiData.execution,
+            allThreadInfos.first().chunk,
         )
 
         if (isSynchronous) {
@@ -352,7 +359,7 @@ class MyScene : Scene() {
             allTimeLineEvents.add(endEvent)
         }
         else {
-            for ((_, _, timelineEvents) in threadInfos) {
+            for ((_, _, timelineEvents) in allThreadInfos) {
                 timelineEvents.add(endEvent)
             }
         }
@@ -366,15 +373,17 @@ class MyScene : Scene() {
         while (currentEventIndex < allTimeLineEvents.size) {
             val timelineEvent = allTimeLineEvents[currentEventIndex]
             val threadHoldingCurrentEvent: ThreadInfo =
-                timelineEvent.frame.topFrame.let { top -> threadInfos.single { it.treadUiData.execution === top } }
+                timelineEvent.frame.topFrame.let { top -> allThreadInfos.single { it.treadUiData.execution === top } }
 
             val end = windowSize.width / 2 - timelineEvent.absPosition
             val path = (end - threadHoldingCurrentEvent.chunk.x).absoluteValue
 
-            fun timeFromPath(p: Double) = ((p / windowSize.width) * slowDownAnimationCoefficient).milliseconds
-            fun pathFromTime(ms: Long) = ms.toDouble() / slowDownAnimationCoefficient * windowSize.width
+            fun timeFromPath(p: Double) = ((p / windowSize.width) * slowRunningAnimationCoefficient).milliseconds
+            fun pathFromTime(ms: Long) = ms.toDouble() / slowRunningAnimationCoefficient * windowSize.width
 
-            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(threadInfos.single { it.treadUiData == t }) } ?: threadInfos
+            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(allThreadInfos.single { it.treadUiData == t }) } ?: allThreadInfos
+
+            val stayingThreads = allThreadInfos.toSet() - runningThreads.toSet()
 
             coroutineScope {
                 for ((treadUiData,  chunk, timelineEvents) in runningThreads) {
@@ -387,16 +396,36 @@ class MyScene : Scene() {
                         chunk.tween(chunk::x[start, start - path], time = timeFromPath(path), easing = Easing.LINEAR)
                     }
                 }
+                // staying threads are just staying
             }
 
             val (event, nextRunningType, injection) = timelineEvent.eventAndNextRunningType
 
             if (event == TimelineEventType.EndOfAnimation) break
 
+            if (event is TimelineEventType.AllPaused) {
+                setStateText("Paused")
+            }
+
+            val remainRunning = if (event !is TimelineEventType.AllPaused) {
+                runningThreads - threadHoldingCurrentEvent
+            } else emptyList()
+
+            fun CoroutineScope.continueRunRemainRunning(timeInMs: Long) {
+                if (remainRunning.isEmpty()) return
+                val pathFromTime = pathFromTime(timeInMs)
+                for (threadRemainRunning in remainRunning) {
+                    val chunk = threadRemainRunning.chunk
+                    launch {
+                        chunk.tween(chunk::x[chunk.x, chunk.x - pathFromTime], time = timeInMs.milliseconds, easing = Easing.LINEAR)
+                    }
+                }
+            }
+
             if (event.isPaused) {
                 setStateText("Paused")
 
-                for ((treadUiData, chunk, timelineEvents) in threadInfos) {
+                for ((treadUiData, chunk, timelineEvents) in (allThreadInfos - remainRunning)) {
                     stopSignMap[treadUiData]?.let {
                         threadsContainer.removeChild(it)
                     }
@@ -417,7 +446,12 @@ class MyScene : Scene() {
                 } else if (event == TimelineEventType.PermanentBreakpoint) {
                     delay(100000)
                 } else {
-                    delay(1000)
+                    coroutineScope {
+                        launch {
+                            delay(waitOnBreakpoint)
+                        }
+                        continueRunRemainRunning(waitOnBreakpoint)
+                    }
                 }
 
                 if (injection != null) {
@@ -453,13 +487,14 @@ class MyScene : Scene() {
                             c = c.parent ?: break
                         }
                         if (event is TimelineEventType.ShortPaused) {
-                            for (info in threadInfos) {
+                            for (info in allThreadInfos) {
                                 if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
                                 launch {
                                     info.chunk.tween(info.chunk::x[info.chunk.x, info.chunk.x - pathFromTime(timeForExtendMs)], time = timeForExtendMs.milliseconds)
                                 }
                             }
                         }
+                        continueRunRemainRunning(timeForExtendMs)
                     }
                     timelineEvent.container.addChild(injectionChunk)
                     injectionChunk.x = timelineEvent.relativePosition + lineLikeRectWidth
@@ -483,13 +518,23 @@ class MyScene : Scene() {
                     allTimeLineEvents.sortBy { it.absPosition }
 
                     if (event !is TimelineEventType.ShortPaused) {
-                        delay(1000)
+                        coroutineScope {
+                            launch {
+                                delay(waitOnBreakpoint)
+                            }
+                            continueRunRemainRunning(waitOnBreakpoint)
+                        }
                     }
                 }
 
                 if (event is TimelineEventType.SetFilterEvent) {
-                    setFilterText("Stepping Filter: " + event.filterText).let {
-                        it.tween(it::alpha[0.0, 1.0], time = timeShowCoroutineFilterMs.milliseconds)
+                    coroutineScope {
+                        launch {
+                            setFilterText("Stepping Filter: " + event.filterText).let {
+                                it.tween(it::alpha[0.0, 1.0], time = timeShowCoroutineFilterMs.milliseconds)
+                            }
+                        }
+                        continueRunRemainRunning(timeShowCoroutineFilterMs)
                     }
                 }
 

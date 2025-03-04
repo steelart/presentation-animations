@@ -30,7 +30,7 @@ fun coroutineCase(): List<TreadUiData> {
             }
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.ResumeThread, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.SuspendAllBreakpoint, RunningType.ResumeThread, getCoroutineInjection))
                 selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.SteppingOver("func()"))
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
@@ -39,16 +39,10 @@ fun coroutineCase(): List<TreadUiData> {
             //selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
         }
 
-        for (i in 50..53) {
+        for (i in 50..103) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("launch $i") {
                 selfExecutionArea(longExecutionLen)
-            }
-        }
-        frameExecution("launch 56") {
-            selfExecutionArea(longExecutionLen)
-            frameExecution("boo") {
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.BreakpointTmpThread, RunningType.ResumeThread, getCoroutineInjection))
             }
         }
     })
@@ -86,7 +80,7 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(longExecutionLen)
             frameExecution("someAnotherFunc") {
                 selfExecutionArea(longExecutionLen)
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.Breakpoint, RunningType.ResumeThread, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.SuspendThreadBreakpoint, RunningType.ResumeAll, getCoroutineInjection))
                 selfExecutionArea(longExecutionLen)
             }
         }
