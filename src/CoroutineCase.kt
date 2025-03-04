@@ -80,7 +80,10 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(longExecutionLen)
             frameExecution("someAnotherFunc") {
                 selfExecutionArea(longExecutionLen)
-                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.SuspendThreadBreakpoint, RunningType.ResumeAll, getCoroutineInjection))
+                selfExecutionArea(shortExecutionLen, EventAndNextRunningType(
+                    TimelineEventType.TechnicalThreadBreakpoint, RunningType.ResumeAll, getCoroutineInjection,
+                    EventAndNextRunningType(TimelineEventType.ConditionCheck("Coroutine#4 ≠ Coroutine#1"), RunningType.ResumeAll)
+                ))
                 selfExecutionArea(longExecutionLen)
             }
         }

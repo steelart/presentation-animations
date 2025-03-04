@@ -57,7 +57,12 @@ suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, ba
 sealed interface ExecutionArea
 
 
-data class EventAndNextRunningType(val event: TimelineEventType, val nextRunningType: RunningType, val injection: FrameExecution? = null)
+data class EventAndNextRunningType(
+    val event: TimelineEventType,
+    val nextRunningType: RunningType,
+    val injection: FrameExecution? = null,
+    val onInjectionEnd: EventAndNextRunningType? = null,
+)
 
 class SelfExecutionArea(val width: Number, val eventAndNextRunningType: EventAndNextRunningType?) : ExecutionArea
 
@@ -133,7 +138,7 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
                     if (event.isBreakpoint) {
                         lineLikeRect(rectHeight).also {
                             it.x = centerX - it.width/2
-                            it.fill = Colors.BROWN
+                            it.fill = if (event.isTechnical) Colors.ORANGE else Colors.BROWN
                             container.addChild(it)
                         }
                     }
@@ -253,16 +258,17 @@ sealed interface RunningType {
 sealed interface TimelineEventType {
     val isPaused: Boolean
     val isBreakpoint: Boolean
+    val isTechnical: Boolean get() = false
 
     interface AllPaused : TimelineEventType
-    interface ShortPaused : TimelineEventType
+    interface ShortPaused : TimelineEventType {
+        override val isTechnical: Boolean get() = true
+    }
 
     abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
 
     object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
     object SuspendAllBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), AllPaused
-
-    object SuspendThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
 
     object SkippedBreakpoint : TimelineEventTypeImpl(isPaused = false, isBreakpoint = true)
     object SteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
@@ -270,6 +276,14 @@ sealed interface TimelineEventType {
     object EndOfAnimation : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false)
 
     class SetFilterEvent(val filterText: String) : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
+
+    object TechnicalThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true) {
+        override val isTechnical: Boolean get() = true
+    }
+
+    class ConditionCheck(val checkText: String) : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false) {
+        override val isTechnical: Boolean get() = true
+    }
 }
 
 class TreadUiData(val treadY: Double, val execution: FrameExecution)
@@ -399,7 +413,7 @@ class MyScene : Scene() {
                 // staying threads are just staying
             }
 
-            val (event, nextRunningType, injection) = timelineEvent.eventAndNextRunningType
+            val (event, nextRunningType, injection, onInjectionEnd) = timelineEvent.eventAndNextRunningType
 
             if (event == TimelineEventType.EndOfAnimation) break
 
@@ -423,7 +437,7 @@ class MyScene : Scene() {
             }
 
             if (event.isPaused) {
-                setStateText("Paused")
+                //setStateText("Paused")
 
                 for ((treadUiData, chunk, timelineEvents) in (allThreadInfos - remainRunning)) {
                     stopSignMap[treadUiData]?.let {
@@ -441,7 +455,7 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData] = c
                 }
 
-                if (event is TimelineEventType.ShortPaused) {
+                if (event.isTechnical) {
                     // nothing
                 } else if (event == TimelineEventType.PermanentBreakpoint) {
                     delay(100000)
@@ -511,7 +525,7 @@ class MyScene : Scene() {
 
                     allTimeLineEvents.add(TimelineEvent(
                         timelineEvent.absPosition + lineLikeRectWidth + extendBy,
-                        EventAndNextRunningType(TimelineEventType.EvaluationEnd, RunningType.ExecutionEnd),
+                        onInjectionEnd ?: EventAndNextRunningType(TimelineEventType.EvaluationEnd, RunningType.ExecutionEnd),
                         injection,
                         injectionChunk,
                     ))
@@ -538,10 +552,28 @@ class MyScene : Scene() {
                     }
                 }
 
+                if (event is TimelineEventType.ConditionCheck) {
+                    coroutineScope {
+                        launch {
+                            val c = container()
+                            val t = Text(event.checkText, textSize = functionTextSize, color = Colors.ORANGE)
+                            t.position(windowSize.width / 2 - t.width / 2, threadHoldingCurrentEvent.treadUiData.treadY + threadHeight)
+                            val r = c.roundRect(t.size*1.2, RectCorners(cornerR), fill = Colors.BLACK, stroke = Colors.WHITE, globalStrokeThickness)
+                            r.position(t.x - t.size.width*0.1, t.y - t.size.height*0.1)
+                            c.addChild(t)
+
+                            addChild(c)
+                            c.tween(c::alpha[0.0, 1.0], time = timeForExtendMs.milliseconds)
+                            delay(timeShowCoroutineFilterMs)
+                            c.tween(c::alpha[1.0, 0.0], time = timeForExtendMs.milliseconds)
+                        }
+                        continueRunRemainRunning(2*timeForExtendMs + timeShowCoroutineFilterMs)
+                    }
+                }
+
                 if (nextRunningType is RunningType.ChangingState) {
                     setStateText(
                         when (nextRunningType) {
-                            RunningType.ResumeAll, RunningType.ResumeThread -> "Evaluation"
                             RunningType.Running -> "Running"
                             is RunningType.SteppingOver -> "Stepping Over ${nextRunningType.functionName}"
                             RunningType.ExecutionEnd -> "Done"
