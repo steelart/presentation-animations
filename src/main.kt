@@ -2,6 +2,9 @@ import korlibs.image.color.Colors
 import korlibs.image.color.RGBA
 import korlibs.image.paint.LinearGradientPaint
 import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
+import korlibs.image.vector.format.SVG
+import korlibs.image.vector.toShape
+import korlibs.io.file.std.UrlVfs
 import korlibs.korge.Korge
 import korlibs.korge.scene.Scene
 import korlibs.korge.scene.sceneContainer
@@ -301,6 +304,10 @@ class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadN
 
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
+        if (false) {
+            vectorImage(SVG(UrlVfs("https://raw.githubusercontent.com/korlibs/korge-jitto/main/icons/jitto-new.svg").readString()).toShape())
+        }
+
         val threadsContainer = container()
 
         val isSynchronous = true
