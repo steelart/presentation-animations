@@ -297,7 +297,7 @@ sealed interface TimelineEventType {
     }
 }
 
-class TreadUiData(val treadY: Double, val execution: FrameExecution)
+class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadName: String? = null)
 
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
@@ -347,6 +347,13 @@ class MyScene : Scene() {
 
             threadsContainer.solidRect(windowSize.width, threadHeight, Colors.BLUEVIOLET) {
                 y = treadUiData.treadY
+            }
+
+            treadUiData.threadName?.let {
+                threadsContainer.text(it, textSize = functionTextSize) {
+                    x = windowSize.width / 2 - textXShift*2 - width
+                    y = treadUiData.treadY + threadHeight/2 - height/2
+                }
             }
 
             adjustDepth(execution, 0, null)

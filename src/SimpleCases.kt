@@ -16,7 +16,7 @@ fun simpleOnThreadCase(): List<TreadUiData> {
         selfExecutionArea(shortExecutionLen)
     })
 
-    return listOf(TreadUiData(windowSize.height/4, execution))
+    return listOf(TreadUiData(windowSize.height/4, execution, "main-thread"))
 }
 
 fun twoThreadsCase(): List<TreadUiData> {
