@@ -5,8 +5,10 @@ import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
 import korlibs.image.vector.format.SVG
 import korlibs.image.vector.toShape
 import korlibs.io.file.std.UrlVfs
+import korlibs.io.file.std.resourcesVfs
 import korlibs.korge.Korge
 import korlibs.korge.scene.Scene
+import korlibs.korge.scene.delay
 import korlibs.korge.scene.sceneContainer
 import korlibs.korge.tween.get
 import korlibs.korge.tween.tween
@@ -304,8 +306,12 @@ class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadN
 
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
-        if (false) {
-            vectorImage(SVG(UrlVfs("https://raw.githubusercontent.com/korlibs/korge-jitto/main/icons/jitto-new.svg").readString()).toShape())
+        if (true) {
+            vectorImage(SVG(resourcesVfs["debug_dark.svg"].readString()).toShape()).let {
+                println(it.size)
+                it.toWidth(windowSize.height/4)
+            }
+            delay(100000)
         }
 
         val threadsContainer = container()
@@ -633,3 +639,16 @@ class MyScene : Scene() {
 
 
 private fun lineLikeRect(h: Double): RoundRect = RoundRect(Size(lineLikeRectWidth * 2, h), RectCorners(cornerR))
+
+
+fun <T : View> T.toHeight(shouldBeHeight: Double): T {
+    scaledHeight = shouldBeHeight
+    scaleX = scaleY
+    return this
+}
+
+fun <T : View> T.toWidth(shouldBeWidth: Double): T {
+    scaledWidth = shouldBeWidth
+    scaleY = scaleX
+    return this
+}
