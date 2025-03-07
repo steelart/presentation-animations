@@ -1,5 +1,6 @@
 import korlibs.image.color.Colors
 import korlibs.image.color.RGBA
+import korlibs.image.format.readBitmap
 import korlibs.image.paint.LinearGradientPaint
 import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
 import korlibs.image.vector.format.SVG
@@ -306,10 +307,13 @@ class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadN
 
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
+//            vectorImage(SVG(resourcesVfs["debug_dark.svg"].readString()).toShape()).let {
+//                it.toWidth(windowSize.height/4)
+//            }
         if (true) {
-            vectorImage(SVG(resourcesVfs["debug_dark.svg"].readString()).toShape()).let {
-                println(it.size)
-                it.toWidth(windowSize.height/4)
+            val bitmap = resourcesVfs["resume_dark.png"].readBitmap()
+            image(bitmap) {
+                toHeight(windowSize.width/4)
             }
             delay(100000)
         }
