@@ -3,13 +3,9 @@ import korlibs.image.color.RGBA
 import korlibs.image.format.readBitmap
 import korlibs.image.paint.LinearGradientPaint
 import korlibs.image.text.TextAlignment.Companion.MIDDLE_LEFT
-import korlibs.image.vector.format.SVG
-import korlibs.image.vector.toShape
-import korlibs.io.file.std.UrlVfs
 import korlibs.io.file.std.resourcesVfs
 import korlibs.korge.Korge
 import korlibs.korge.scene.Scene
-import korlibs.korge.scene.delay
 import korlibs.korge.scene.sceneContainer
 import korlibs.korge.tween.get
 import korlibs.korge.tween.tween
@@ -44,7 +40,7 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val speedupAllAnimationCoefficient = 2.0
+val speedupAllAnimationCoefficient = 1.0
 
 val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
 
@@ -292,7 +288,8 @@ sealed interface TimelineEventType {
 
     object SuspendThreadPause : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), ShortPaused
 
-    object SuspendAllSteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), AllPaused, PermanentPaused
+    object SuspendAllSteppingEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), AllPaused
+    object SuspendAllSteppingPermanentEnd : TimelineEventTypeImpl(isPaused = true, isBreakpoint = false), AllPaused, PermanentPaused
 
     object TechnicalThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true) {
         override val isTechnical: Boolean get() = true
@@ -305,23 +302,21 @@ sealed interface TimelineEventType {
 
 class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadName: String? = null)
 
+
+//lateinit var startDebugImage: Image
+//lateinit var stepOverImage: Image
+//lateinit var resumeImage: Image
+
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
-//            vectorImage(SVG(resourcesVfs["debug_dark.svg"].readString()).toShape()).let {
-//                it.toWidth(windowSize.height/4)
-//            }
-        if (true) {
-            val bitmap = resourcesVfs["resume_dark.png"].readBitmap()
-            image(bitmap) {
-                toHeight(windowSize.width/4)
-            }
-            delay(100000)
-        }
+        val startDebugImage = Image(resourcesVfs["debug_dark.png"].readBitmap())
+        val stepOverImage = Image(resourcesVfs["stepOver_dark.png"].readBitmap())
+        val resumeImage = Image(resourcesVfs["resume_dark.png"].readBitmap())
 
         val threadsContainer = container()
 
         val isSynchronous = true
-        val treadUiDataList = coroutineCase()
+        val treadUiDataList = simpleOnThreadCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
@@ -412,6 +407,8 @@ class MyScene : Scene() {
                 timelineEvents.add(endEvent)
             }
         }
+
+        animateAction(startDebugImage)
 
         setStateText("Running")
 
@@ -615,6 +612,12 @@ class MyScene : Scene() {
                 }
 
                 if (nextRunningType is RunningType.ChangingState) {
+                    if (nextRunningType == RunningType.Running) {
+                        animateAction(resumeImage)
+                    }
+                    if (nextRunningType is RunningType.SteppingOver) {
+                        animateAction(stepOverImage)
+                    }
                     setStateText(
                         when (nextRunningType) {
                             RunningType.Running -> "Running"
@@ -623,6 +626,8 @@ class MyScene : Scene() {
                         }
                     )
                 }
+
+
 
                 threadNowRunning = when (nextRunningType) {
                     RunningType.ResumeThread -> threadHoldingCurrentEvent.treadUiData
@@ -640,6 +645,22 @@ class MyScene : Scene() {
     }
 }
 
+
+private suspend fun Container.animateAction(image: Image) {
+    val c = container()
+    image.toHeight(windowSize.height/2)
+
+    c.roundRect(image.scaledSize, RectCorners(image.scaledSize.height/20), fill = RGBA(50,  50, 50), stroke = Colors.WHITE, strokeThickness = globalStrokeThickness)
+    c.addChild(image)
+
+    addChild(c)
+    c.y = windowSize.height/4
+    c.x = windowSize.width/2 - image.scaledWidth/2
+
+    c.tween(c::alpha[0.0, 1.0], time = timeShowCoroutineFilterMs.milliseconds)
+    c.tween(c::alpha[1.0, 0.0], time = timeShowCoroutineFilterMs.milliseconds)
+    removeChild(c)
+}
 
 
 private fun lineLikeRect(h: Double): RoundRect = RoundRect(Size(lineLikeRectWidth * 2, h), RectCorners(cornerR))

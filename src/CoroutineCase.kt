@@ -133,7 +133,7 @@ fun coroutineCase(): List<TreadUiData> {
                     repeat(3) {
                         selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendThreadPause, RunningType.ResumeAll)
                     }
-                    selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingEnd, RunningType.ExecutionEnd)
+                    selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingPermanentEnd, RunningType.ExecutionEnd)
                     selfExecutionArea(longExecutionLen)
                 }
             }

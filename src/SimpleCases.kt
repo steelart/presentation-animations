@@ -8,7 +8,7 @@ fun simpleOnThreadCase(): List<TreadUiData> {
             frameExecution("boo") {
                 selfExecutionArea(longExecutionLen)
             }
-            selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.SteppingOver("bar"))
+            selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingEnd, RunningType.SteppingOver("bar"))
             frameExecution("bar") {
                 selfExecutionArea(longExecutionLen, TimelineEventType.SuspendAllBreakpoint, RunningType.Running)
             }
