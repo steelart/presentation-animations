@@ -26,7 +26,7 @@ fun twoThreadsCase(): List<TreadUiData> {
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen)
         }
-        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingEnd, RunningType.Running)
         for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
@@ -35,9 +35,9 @@ fun twoThreadsCase(): List<TreadUiData> {
         }
     })
 
-    val execution2 = FrameExecution("run", buildList {
-        selfExecutionArea(longExecutionLen)
-        for (i in 0..100) {
+    val execution2 = FrameExecution("another", buildList {
+        selfExecutionArea(shortExecutionLen)
+        for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("func") {
                 selfExecutionArea(shortExecutionLen)
@@ -45,8 +45,8 @@ fun twoThreadsCase(): List<TreadUiData> {
         }
     })
     return listOf(
-        TreadUiData(windowSize.height/4, execution1),
-        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
+        TreadUiData(windowSize.height/8, execution1, "Thread-1"),
+        TreadUiData(windowSize.height/8 + threadHeight*2, execution2, "Thread-2"),
     )
 }
 

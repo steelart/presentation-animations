@@ -648,13 +648,13 @@ class MyScene : Scene() {
 
 private suspend fun Container.animateAction(image: Image) {
     val c = container()
-    image.toHeight(windowSize.height/2)
+    image.toHeight(windowSize.height/4)
 
     c.roundRect(image.scaledSize, RectCorners(image.scaledSize.height/20), fill = RGBA(50,  50, 50), stroke = Colors.WHITE, strokeThickness = globalStrokeThickness)
     c.addChild(image)
 
     addChild(c)
-    c.y = windowSize.height/4
+    c.y = windowSize.height/10
     c.x = windowSize.width/2 - image.scaledWidth/2
 
     c.tween(c::alpha[0.0, 1.0], time = timeShowCoroutineFilterMs.milliseconds)
