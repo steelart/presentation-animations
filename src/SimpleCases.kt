@@ -57,7 +57,7 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
-        selfExecutionArea(shortExecutionLen, TimelineEventType.SteppingEnd, RunningType.Running)
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendAllSteppingEnd, RunningType.Running)
         for (i in 0..10) {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
@@ -66,10 +66,10 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
         }
     })
 
-    val execution2 = FrameExecution("run", buildList {
+    val execution2 = FrameExecution("another", buildList {
         selfExecutionArea(longExecutionLen)
 
-        frameExecution("another") {
+        frameExecution("some") {
             selfExecutionArea(longExecutionLen)
             selfExecutionArea(longExecutionLen, TimelineEventType.SkippedBreakpoint, RunningType.SteppingOver("some"))
         }
@@ -82,15 +82,15 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
         }
     })
     return listOf(
-        TreadUiData(windowSize.height/4, execution1),
-        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
+        TreadUiData(windowSize.height/8, execution1, "Thread-1"),
+        TreadUiData(windowSize.height/8 + threadHeight*2, execution2, "Thread-2"),
     )
 }
 
 fun suspendThreadModeCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.SteppingOver("foo"))
+        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendThreadPermanentBreakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
@@ -110,7 +110,7 @@ fun suspendThreadModeCase(): List<TreadUiData> {
 
         frameExecution("another") {
             selfExecutionArea(longExecutionLen)
-            selfExecutionArea(longExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.Running)
+            selfExecutionArea(longExecutionLen, TimelineEventType.SuspendThreadPermanentBreakpoint, RunningType.Running)
         }
 
         for (i in 0..100) {
@@ -133,9 +133,9 @@ fun suspendThreadModeCase(): List<TreadUiData> {
     })
 
     return listOf(
-        TreadUiData(windowSize.height/4, execution1),
-        TreadUiData(windowSize.height/4 + threadHeight*2, execution2),
-        TreadUiData(windowSize.height/4 + threadHeight*4, execution3),
+        TreadUiData(windowSize.height/4, execution1, "Thread-1"),
+        TreadUiData(windowSize.height/4 + threadHeight*2, execution2, "Thread-2"),
+        TreadUiData(windowSize.height/4 + threadHeight*4, execution3, "Thread-3"),
     )
 }
 

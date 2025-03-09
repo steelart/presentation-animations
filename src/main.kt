@@ -316,7 +316,7 @@ class MyScene : Scene() {
         val threadsContainer = container()
 
         val isSynchronous = true
-        val treadUiDataList = simpleOnThreadCase()
+        val treadUiDataList = coroutineCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
             addChild(it)
