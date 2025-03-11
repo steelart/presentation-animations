@@ -90,7 +90,7 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
 fun suspendThreadModeCase(): List<TreadUiData> {
     val execution1 = FrameExecution("bar", buildList {
         selfExecutionArea(longExecutionLen)
-        selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendThreadPermanentBreakpoint, RunningType.SteppingOver("foo"))
+        selfExecutionArea(shortExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.SteppingOver("foo"))
         frameExecution("foo") {
             selfExecutionArea(longExecutionLen*3)
         }
@@ -110,7 +110,7 @@ fun suspendThreadModeCase(): List<TreadUiData> {
 
         frameExecution("another") {
             selfExecutionArea(longExecutionLen)
-            selfExecutionArea(longExecutionLen, TimelineEventType.SuspendThreadPermanentBreakpoint, RunningType.Running)
+            selfExecutionArea(longExecutionLen, TimelineEventType.PermanentBreakpoint, RunningType.Running)
         }
 
         for (i in 0..100) {
