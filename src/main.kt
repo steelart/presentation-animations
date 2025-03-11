@@ -285,7 +285,8 @@ sealed interface TimelineEventType {
 
     abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
 
-    object PermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), PermanentPaused
+    object SuspendThreadPermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+
     object SuspendAllBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), AllPaused
 
     object SkippedBreakpoint : TimelineEventTypeImpl(isPaused = false, isBreakpoint = true)
