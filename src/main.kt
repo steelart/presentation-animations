@@ -40,7 +40,7 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val speedupAllAnimationCoefficient = 1.0
+val speedupAllAnimationCoefficient = 2.0
 
 val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
 
@@ -143,11 +143,20 @@ fun CollectedInfo.createUiFromExecution(execution: FrameExecution, xFirstFrameSh
                     val centerX = startingX + area.width.toDouble() / 2.0
                     val event = area.eventAndNextRunningType.event
                     if (event.isBreakpoint) {
-                        lineLikeRect(rectHeight).also {
-                            it.x = centerX - it.width/2
-                            it.fill = if (event.isTechnical) Colors.ORANGE else Colors.BROWN
-                            container.addChild(it)
+                        Circle(pauseR).apply {
+                            anchor = Anchor.CENTER
+                            x = centerX //- width/2
+                            y = rectHeight/2
+                            stroke = Colors.WHITE
+                            strokeThickness = globalStrokeThickness
+                            fill = if (event.isTechnical) Colors.ORANGE else Colors.BROWN
+                            container.addChild(this)
                         }
+//                        lineLikeRect(rectHeight).also {
+//                            it.x = centerX - it.width/2
+//                            it.fill = if (event.isTechnical) Colors.ORANGE else Colors.BROWN
+//                            container.addChild(it)
+//                        }
                     }
                     breakPointPositions.add(TimelineEvent(
                         xFirstFrameShift + centerX,
@@ -312,6 +321,8 @@ class MyScene : Scene() {
         val startDebugImage = Image(resourcesVfs["debug_dark.png"].readBitmap())
         val stepOverImage = Image(resourcesVfs["stepOver_dark.png"].readBitmap())
         val resumeImage = Image(resourcesVfs["resume_dark.png"].readBitmap())
+        val pauseVisibleBitmap = resourcesVfs["pause_visible.png"].readBitmap()
+        val pauseTemporaryBitmap = resourcesVfs["pause_temp.png"].readBitmap()
 
         val threadsContainer = container()
 
@@ -412,7 +423,7 @@ class MyScene : Scene() {
 
         setStateText("Running")
 
-        val stopSignMap = mutableMapOf<TreadUiData, Circle>()
+        val stopSignMap = mutableMapOf<TreadUiData, View>()
 
         var threadNowRunning: TreadUiData? = null
         var currentEventIndex = 0
@@ -475,16 +486,14 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData]?.let {
                         threadsContainer.removeChild(it)
                     }
-                    val c = Circle(pauseR).apply {
-                        anchor = Anchor.CENTER
-                        x = (windowSize.width + width) / 2 + pauseR
-                        y = treadUiData.treadY - pauseR
-                        stroke = Colors.WHITE
-                        strokeThickness = globalStrokeThickness
-                        fill = if (event is TimelineEventType.ShortPaused) Colors.YELLOW else Colors.BROWN
+                    val bitmap = if (event is TimelineEventType.ShortPaused) pauseTemporaryBitmap else pauseVisibleBitmap
+                    val pauseImage = Image(bitmap).also {
+                        it.toWidth(lineLikeRectWidth*8)
+                        it.x = windowSize.width / 2 + lineLikeRectWidth
+                        it.y = treadUiData.treadY - it.scaledHeight
                     }
-                    threadsContainer.addChild(c)
-                    stopSignMap[treadUiData] = c
+                    threadsContainer.addChild(pauseImage)
+                    stopSignMap[treadUiData] = pauseImage
                 }
 
                 if (event.isTechnical) {
@@ -533,14 +542,7 @@ class MyScene : Scene() {
                             relativePosition = c.x + c.width - 1
                             c = c.parent ?: break
                         }
-//                        if (event is TimelineEventType.ShortPaused) {
-//                            for (info in allThreadInfos) {
-//                                if (info.treadUiData == threadHoldingCurrentEvent.treadUiData) continue
-//                                launch {
-//                                    info.chunk.tween(info.chunk::x[info.chunk.x, info.chunk.x - pathFromTime(timeForExtendMs)], time = timeForExtendMs.milliseconds)
-//                                }
-//                            }
-//                        }
+
                         continueRunRemainRunning(timeForExtendMs)
                     }
                     timelineEvent.container.addChild(injectionChunk)
