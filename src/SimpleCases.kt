@@ -108,6 +108,13 @@ fun suspendThreadModeCase(): List<TreadUiData> {
     val execution2 = FrameExecution("run", buildList {
         selfExecutionArea(longExecutionLen)
 
+        repeat(2) {
+            frameExecution("func") {
+                selfExecutionArea(shortExecutionLen)
+            }
+            selfExecutionArea(shortExecutionLen)
+        }
+
         frameExecution("another") {
             selfExecutionArea(longExecutionLen)
             selfExecutionArea(longExecutionLen, TimelineEventType.SuspendThreadPermanentBreakpoint, RunningType.JustPause)

@@ -40,7 +40,7 @@ val pauseR = threadHeight / 5
 val longExecutionLen = windowSize.width/5
 val shortExecutionLen = longExecutionLen/4
 
-val speedupAllAnimationCoefficient = 2.0
+val speedupAllAnimationCoefficient = 1.0
 
 val slowRunningAnimationCoefficient = 8000.0 / speedupAllAnimationCoefficient
 
@@ -322,10 +322,6 @@ sealed interface TimelineEventType {
 class TreadUiData(val treadY: Double, val execution: FrameExecution, val threadName: String? = null)
 
 
-//lateinit var startDebugImage: Image
-//lateinit var stepOverImage: Image
-//lateinit var resumeImage: Image
-
 class MyScene : Scene() {
     override suspend fun SContainer.sceneMain() {
         val startDebugImage = Image(resourcesVfs["debug_dark.png"].readBitmap())
@@ -337,6 +333,10 @@ class MyScene : Scene() {
         val threadsContainer = container()
 
         val isSynchronous = true
+//        val treadUiDataList = simpleOnThreadCase()
+//        val treadUiDataList = twoThreadsCase()
+//        val treadUiDataList = breakpointInAnotherThreadCase()
+//        val treadUiDataList = suspendThreadModeCase()
         val treadUiDataList = coroutineCase()
 
         horizontalGradientContainer(Size(windowSize.width/3, windowSize.height), 1.0, 0.0).also {
@@ -526,12 +526,19 @@ class MyScene : Scene() {
                         continueRunRemainRunning(waitOnBreakpoint)
                     }
                 }
-                if (nextRunningType is RunningType.ChangingState) {
-                    if (nextRunningType == RunningType.Running) {
-                        animateAction(resumeImage)
-                    }
-                    if (nextRunningType is RunningType.SteppingOverI) {
-                        animateAction(stepOverImage)
+
+                val animateActionImage = when(nextRunningType) {
+                    RunningType.Running -> resumeImage
+                    is RunningType.SteppingOverI -> stepOverImage
+                    else -> null
+                }
+
+                if (animateActionImage != null) {
+                    coroutineScope {
+                        launch {
+                            animateAction(animateActionImage)
+                        }
+                        continueRunRemainRunning(timeShowCoroutineFilterMs*2)
                     }
                 }
 
