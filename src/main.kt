@@ -260,7 +260,7 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
 
 sealed interface RunningType {
     data object ResumeAll : RunningType
-    data object ResumeThread : RunningType
+    interface ResumeThread : RunningType
 
     sealed interface ChangingState : RunningType
 
@@ -268,7 +268,12 @@ sealed interface RunningType {
 
     data object ExecutionEnd : RunningType, ChangingState
 
-    data class SteppingOver(val functionName: String) : RunningType, ChangingState
+    sealed interface SteppingOverI : RunningType {
+        val functionName: String
+    }
+
+    data class SteppingOver(override val functionName: String) : SteppingOverI, ChangingState
+    data class SteppingOverThread(override val functionName: String) : SteppingOverI, ChangingState, ResumeThread
 }
 
 sealed interface TimelineEventType {
@@ -618,13 +623,13 @@ class MyScene : Scene() {
                     if (nextRunningType == RunningType.Running) {
                         animateAction(resumeImage)
                     }
-                    if (nextRunningType is RunningType.SteppingOver) {
+                    if (nextRunningType is RunningType.SteppingOverI) {
                         animateAction(stepOverImage)
                     }
                     setStateText(
                         when (nextRunningType) {
                             RunningType.Running -> "Running"
-                            is RunningType.SteppingOver -> "Stepping Over ${nextRunningType.functionName}"
+                            is RunningType.SteppingOverI -> "Stepping Over ${nextRunningType.functionName}"
                             RunningType.ExecutionEnd -> "Done"
                         }
                     )
@@ -633,7 +638,7 @@ class MyScene : Scene() {
 
 
                 threadNowRunning = when (nextRunningType) {
-                    RunningType.ResumeThread -> threadHoldingCurrentEvent.treadUiData
+                    is RunningType.ResumeThread -> threadHoldingCurrentEvent.treadUiData
                     else -> null
                 }
             }
