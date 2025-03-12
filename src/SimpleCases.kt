@@ -16,7 +16,7 @@ fun simpleOnThreadCase(): List<TreadUiData> {
         selfExecutionArea(shortExecutionLen)
     })
 
-    return listOf(TreadUiData(windowSize.height/4, execution, "main-thread"))
+    return listOf(TreadUiData(windowSize.height/6, execution, "main-thread"))
 }
 
 fun twoThreadsCase(): List<TreadUiData> {
@@ -45,8 +45,8 @@ fun twoThreadsCase(): List<TreadUiData> {
         }
     })
     return listOf(
-        TreadUiData(windowSize.height/8, execution1, "Thread-1"),
-        TreadUiData(windowSize.height/8 + threadHeight*2, execution2, "Thread-2"),
+        TreadUiData(windowSize.height/6, execution1, "Thread-1"),
+        TreadUiData(windowSize.height/6 + threadHeight*2, execution2, "Thread-2"),
     )
 }
 
@@ -82,8 +82,8 @@ fun breakpointInAnotherThreadCase(): List<TreadUiData> {
         }
     })
     return listOf(
-        TreadUiData(windowSize.height/8, execution1, "Thread-1"),
-        TreadUiData(windowSize.height/8 + threadHeight*2, execution2, "Thread-2"),
+        TreadUiData(windowSize.height/6, execution1, "Thread-1"),
+        TreadUiData(windowSize.height/6 + threadHeight*2, execution2, "Thread-2"),
     )
 }
 
