@@ -49,7 +49,9 @@ val timeShowCoroutineFilterMs = (1500L / speedupAllAnimationCoefficient).toLong(
 val waitOnBreakpoint = (1000L / speedupAllAnimationCoefficient).toLong()
 val shortWaitOnPause = (300L / speedupAllAnimationCoefficient).toLong()
 
-suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = Colors["#2b2b2b"]) {
+val mainBackgroundColor = Colors["#2b2b2b"]
+
+suspend fun main() = Korge(virtualSize = windowSize, windowSize = windowSize, backgroundColor = mainBackgroundColor) {
     val sceneContainer = sceneContainer()
 
 
@@ -495,11 +497,15 @@ class MyScene : Scene() {
                     val bitmap = if (event is TimelineEventType.ShortPaused) pauseTemporaryBitmap else pauseVisibleBitmap
                     val pauseImage = Image(bitmap).also {
                         it.toWidth(lineLikeRectWidth*8)
-                        it.x = windowSize.width / 2 + lineLikeRectWidth
-                        it.y = treadUiData.treadY - it.scaledHeight
                     }
-                    threadsContainer.addChild(pauseImage)
-                    stopSignMap[treadUiData] = pauseImage
+                    val r = RoundRect(pauseImage.scaledSize, radius = RectCorners(pauseImage.scaledSize.width/10), fill = mainBackgroundColor)
+                    val c = threadsContainer.container().also {
+                        it.x = windowSize.width / 2 + lineLikeRectWidth
+                        it.y = treadUiData.treadY - pauseImage.scaledHeight
+                    }
+                    c.addChild(r)
+                    c.addChild(pauseImage)
+                    stopSignMap[treadUiData] = c
                 }
 
                 if (event.isTechnical) {

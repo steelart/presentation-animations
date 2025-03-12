@@ -141,7 +141,7 @@ fun coroutineCase(): List<TreadUiData> {
         }
     })
     return listOf(
-        TreadUiData(windowSize.height/8, execution1, "worker-1"),
-        TreadUiData(windowSize.height/8 + threadHeight*2, execution2, "worker-2"),
+        TreadUiData(windowSize.height/6, execution1, "worker-1"),
+        TreadUiData(windowSize.height/6 + threadHeight*2, execution2, "worker-2"),
     )
 }
