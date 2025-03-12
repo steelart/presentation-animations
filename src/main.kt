@@ -42,7 +42,7 @@ val shortExecutionLen = longExecutionLen/4
 
 val speedupAllAnimationCoefficient = 2.0
 
-val slowRunningAnimationCoefficient = 5000.0 / speedupAllAnimationCoefficient
+val slowRunningAnimationCoefficient = 8000.0 / speedupAllAnimationCoefficient
 
 val timeForExtendMs = (300L / speedupAllAnimationCoefficient).toLong()
 val timeShowCoroutineFilterMs = (1500L / speedupAllAnimationCoefficient).toLong()
@@ -263,6 +263,7 @@ fun horizontalGradientContainer(gradientSize: Size, leftAlpha: Double, rightAlph
 sealed interface RunningType {
     data object ResumeAll : RunningType
     interface ResumeThread : RunningType
+    data object JustPause : RunningType
 
     sealed interface ChangingState : RunningType
 
@@ -292,7 +293,8 @@ sealed interface TimelineEventType {
 
     abstract class TimelineEventTypeImpl(override val isPaused: Boolean, override val isBreakpoint: Boolean) : TimelineEventType
 
-    object SuspendThreadPermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+    object SuspendThreadBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true)
+    object SuspendThreadPermanentBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), PermanentPaused
 
     object SuspendAllBreakpoint : TimelineEventTypeImpl(isPaused = true, isBreakpoint = true), AllPaused
 
@@ -434,6 +436,7 @@ class MyScene : Scene() {
         val stopSignMap = mutableMapOf<TreadUiData, View>()
 
         var threadNowRunning: TreadUiData? = null
+        val permanentPausedThreads = mutableSetOf<ThreadInfo>()
         var currentEventIndex = 0
         while (currentEventIndex < allTimeLineEvents.size) {
             val timelineEvent = allTimeLineEvents[currentEventIndex]
@@ -446,9 +449,8 @@ class MyScene : Scene() {
             fun timeFromPath(p: Double) = ((p / windowSize.width) * slowRunningAnimationCoefficient).milliseconds
             fun pathFromTime(ms: Long) = ms.toDouble() / slowRunningAnimationCoefficient * windowSize.width
 
-            val runningThreads: List<ThreadInfo> = threadNowRunning?.let { t -> listOf(allThreadInfos.single { it.treadUiData == t }) } ?: allThreadInfos
-
-            val stayingThreads = allThreadInfos.toSet() - runningThreads.toSet()
+            val runningThreads: List<ThreadInfo> =
+                (threadNowRunning?.let { t -> listOf(allThreadInfos.single { it.treadUiData == t }) } ?: allThreadInfos) - permanentPausedThreads
 
             coroutineScope {
                 for ((treadUiData,  chunk, timelineEvents) in runningThreads) {
@@ -494,7 +496,7 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData]?.let {
                         threadsContainer.removeChild(it)
                     }
-                    val bitmap = if (event is TimelineEventType.ShortPaused) pauseTemporaryBitmap else pauseVisibleBitmap
+                    val bitmap = if (event.isTechnical) pauseTemporaryBitmap else pauseVisibleBitmap
                     val pauseImage = Image(bitmap).also {
                         it.toWidth(lineLikeRectWidth*8)
                     }
@@ -508,9 +510,13 @@ class MyScene : Scene() {
                     stopSignMap[treadUiData] = c
                 }
 
+                if (event is TimelineEventType.PermanentPaused) {
+                    permanentPausedThreads.add(threadHoldingCurrentEvent)
+                }
+
                 if (event.isTechnical) {
                     // nothing
-                } else if (event is TimelineEventType.PermanentPaused) {
+                } else if (event is TimelineEventType.PermanentPaused && event is TimelineEventType.AllPaused) {
                     delay(100000)
                 } else {
                     coroutineScope {
@@ -518,6 +524,14 @@ class MyScene : Scene() {
                             delay(waitOnBreakpoint)
                         }
                         continueRunRemainRunning(waitOnBreakpoint)
+                    }
+                }
+                if (nextRunningType is RunningType.ChangingState) {
+                    if (nextRunningType == RunningType.Running) {
+                        animateAction(resumeImage)
+                    }
+                    if (nextRunningType is RunningType.SteppingOverI) {
+                        animateAction(stepOverImage)
                     }
                 }
 
@@ -624,14 +638,7 @@ class MyScene : Scene() {
                         continueRunRemainRunning(2*timeForExtendMs + timeShowCoroutineFilterMs)
                     }
                 }
-
                 if (nextRunningType is RunningType.ChangingState) {
-                    if (nextRunningType == RunningType.Running) {
-                        animateAction(resumeImage)
-                    }
-                    if (nextRunningType is RunningType.SteppingOverI) {
-                        animateAction(stepOverImage)
-                    }
                     setStateText(
                         when (nextRunningType) {
                             RunningType.Running -> "Running"
@@ -640,8 +647,6 @@ class MyScene : Scene() {
                         }
                     )
                 }
-
-
 
                 threadNowRunning = when (nextRunningType) {
                     is RunningType.ResumeThread -> threadHoldingCurrentEvent.treadUiData

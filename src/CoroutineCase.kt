@@ -31,10 +31,11 @@ fun coroutineCase(): List<TreadUiData> {
             selfExecutionArea(shortExecutionLen)
             frameExecution("boo") {
                 selfExecutionArea(shortExecutionLen, EventAndNextRunningType(TimelineEventType.SuspendAllBreakpoint, RunningType.SteppingOverThread("func()"), getCoroutineInjection))
-                selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.Running)
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SetFilterEvent("Coroutine#1"), RunningType.ResumeAll)
                 frameExecution("func") {
                     selfExecutionArea(shortExecutionLen)
                 }
+                selfExecutionArea(shortExecutionLen, TimelineEventType.SuspendThreadPause, RunningType.ResumeAll)
             }
         }
 
@@ -63,7 +64,7 @@ fun coroutineCase(): List<TreadUiData> {
 
         for (i in 50..103) {
             selfExecutionArea(shortExecutionLen)
-            frameExecution("launch $i") {
+            frameExecution("launch $i", frameType = FrameType.CoroutineBorder("Coroutine#$i", true, false)) {
                 selfExecutionArea(longExecutionLen)
             }
         }
